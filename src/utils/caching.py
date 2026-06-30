@@ -1,5 +1,5 @@
 import json
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta
 from typing import Any
 
 from sqlalchemy.orm import Session
@@ -23,7 +23,7 @@ class DBCache:
         if not entry:
             return None
 
-        if entry.expires_at < datetime.utcnow():
+        if entry.expires_at < datetime.now(UTC).replace(tzinfo=None):
             # Clean up expired entry
             self.session.delete(entry)
             self.session.commit()
@@ -39,7 +39,7 @@ class DBCache:
         Stores a value in the cache with a TTL (Time To Live) in seconds.
         """
         serialized_val = json.dumps(value)
-        expires_at = datetime.utcnow() + timedelta(seconds=ttl_seconds)
+        expires_at = datetime.now(UTC).replace(tzinfo=None) + timedelta(seconds=ttl_seconds)
 
         entry = self.session.query(CacheEntry).filter(CacheEntry.key == key).first()
         if entry:
@@ -60,10 +60,8 @@ class DBCache:
 
     def clear_expired(self) -> int:
         """Deletes all expired cache entries and returns the count."""
-        now = datetime.utcnow()
-        expired = (
-            self.session.query(CacheEntry).filter(CacheEntry.expires_at < now).all()
-        )
+        now = datetime.now(UTC).replace(tzinfo=None)
+        expired = self.session.query(CacheEntry).filter(CacheEntry.expires_at < now).all()
         count = len(expired)
         for entry in expired:
             self.session.delete(entry)

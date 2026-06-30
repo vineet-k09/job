@@ -47,9 +47,7 @@ class AnthropicProvider(BaseLLMProvider):
             logger.error(f"Error calling Anthropic API: {e}")
             raise RuntimeError(f"Anthropic provider call failed: {e}") from e
 
-    def generate_json(
-        self, prompt: str, schema: type[BaseModel], system_prompt: str | None = None
-    ) -> BaseModel:
+    def generate_json(self, prompt: str, schema: type[BaseModel], system_prompt: str | None = None) -> BaseModel:
         json_instruction = (
             f"\n\nReturn the response strictly as a JSON object matching this schema:\n"
             f"{schema.model_json_schema()}\n"
@@ -63,9 +61,5 @@ class AnthropicProvider(BaseLLMProvider):
         try:
             return schema.model_validate_json(cleaned_text)
         except Exception as e:
-            logger.error(
-                f"Failed to parse Anthropic response into schema {schema.__name__}. Error: {e}"
-            )
-            raise ValueError(
-                f"JSON validation failed for schema {schema.__name__}: {e}"
-            ) from e
+            logger.error(f"Failed to parse Anthropic response into schema {schema.__name__}. Error: {e}")
+            raise ValueError(f"JSON validation failed for schema {schema.__name__}: {e}") from e

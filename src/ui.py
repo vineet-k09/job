@@ -66,15 +66,12 @@ class RecruitingApp(App[Any]):
     
     .stat-title {
         color: #94a3b8;
-        font-size: 85%;
-        text-transform: uppercase;
         margin-bottom: 1;
     }
     
     .stat-value {
         color: #38bdf8;
-        font-weight: bold;
-        font-size: 140%;
+        text-style: bold;
     }
     
     .button-bar {
@@ -137,7 +134,7 @@ class RecruitingApp(App[Any]):
 
     .section-title {
         margin: 1 2;
-        font-weight: bold;
+        text-style: bold;
     }
     """
 
@@ -160,16 +157,16 @@ class RecruitingApp(App[Any]):
             with TabPane("Dashboard", id="tab-dashboard"):
                 with Grid(id="dashboard-grid"):
                     with Vertical(classes="stat-card"):
-                        yield Label("Total Applications", classes="stat-title")
+                        yield Label("Total Applications".upper(), classes="stat-title")
                         yield Label("0", id="stat-total", classes="stat-value")
                     with Vertical(classes="stat-card"):
-                        yield Label("Gmail Drafts Created", classes="stat-title")
+                        yield Label("Gmail Drafts Created".upper(), classes="stat-title")
                         yield Label("0", id="stat-completed", classes="stat-value")
                     with Vertical(classes="stat-card"):
-                        yield Label("Failed Pipeline Steps", classes="stat-title")
+                        yield Label("Failed Pipeline Steps".upper(), classes="stat-title")
                         yield Label("0", id="stat-failed", classes="stat-value")
                     with Vertical(classes="stat-card"):
-                        yield Label("Excluded / Skipped", classes="stat-title")
+                        yield Label("Excluded / Skipped".upper(), classes="stat-title")
                         yield Label("0", id="stat-filtered", classes="stat-value")
 
                 with Horizontal(classes="button-bar"):
@@ -236,11 +233,7 @@ class RecruitingApp(App[Any]):
         try:
             # 1. Update stats
             total_apps = session.query(Application).count()
-            completed_apps = (
-                session.query(Application)
-                .filter(Application.state == "Completed")
-                .count()
-            )
+            completed_apps = session.query(Application).filter(Application.state == "Completed").count()
             failed_apps = (
                 session.query(Application)
                 .filter(
@@ -257,11 +250,7 @@ class RecruitingApp(App[Any]):
             )
             filtered_apps = (
                 session.query(Application)
-                .filter(
-                    Application.state.in_(
-                        ["Excluded Company", "Salary Too Low", "Ghost Job"]
-                    )
-                )
+                .filter(Application.state.in_(["Excluded Company", "Salary Too Low", "Ghost Job"]))
                 .count()
             )
 
@@ -322,19 +311,11 @@ class RecruitingApp(App[Any]):
                 "Resume Path",
             )
 
-            all_apps = (
-                session.query(Application).order_by(Application.updated_at.desc()).all()
-            )
+            all_apps = session.query(Application).order_by(Application.updated_at.desc()).all()
             for app in all_apps:
                 score_str = f"{app.score:.2f}" if app.score else "N/A"
-                email_str = (
-                    app.contact.email if app.contact and app.contact.email else "N/A"
-                )
-                res_path = (
-                    os.path.basename(app.tailored_resume_path)
-                    if app.tailored_resume_path
-                    else "N/A"
-                )
+                email_str = app.contact.email if app.contact and app.contact.email else "N/A"
+                res_path = os.path.basename(app.tailored_resume_path) if app.tailored_resume_path else "N/A"
                 app_list_table.add_row(
                     str(app.id),
                     app.job.company.name,
@@ -349,9 +330,7 @@ class RecruitingApp(App[Any]):
             # 4. Populate companies list
             comp_table = self.query_one("#table-companies", DataTable)
             comp_table.clear(columns=True)
-            comp_table.add_columns(
-                "ID", "Company Name", "Domain", "Employees", "Industry"
-            )
+            comp_table.add_columns("ID", "Company Name", "Domain", "Employees", "Industry")
             for c in session.query(Company).limit(100).all():
                 comp_table.add_row(
                     str(c.id),
@@ -366,9 +345,7 @@ class RecruitingApp(App[Any]):
             con_table.clear(columns=True)
             con_table.add_columns("ID", "Company", "Name", "Role", "Email")
             for ct in session.query(Contact).limit(100).all():
-                con_table.add_row(
-                    str(ct.id), ct.company.name, ct.name, ct.role, ct.email or "N/A"
-                )
+                con_table.add_row(str(ct.id), ct.company.name, ct.name, ct.role, ct.email or "N/A")
 
             # 6. Populate jobs list
             job_table = self.query_one("#table-jobs", DataTable)
@@ -405,9 +382,7 @@ class RecruitingApp(App[Any]):
             except Exception as e:
                 log_viewer.write(f"Error reading log file: {e}")
         else:
-            log_viewer.write(
-                "No active logs yet. Start the pipeline to see logging details."
-            )
+            log_viewer.write("No active logs yet. Start the pipeline to see logging details.")
 
     # --- Button actions ---
     def on_button_pressed(self, event: Button.Pressed) -> None:
@@ -459,12 +434,7 @@ class RecruitingApp(App[Any]):
             if not app:
                 return
 
-            email_info = (
-                session.query(Email)
-                .filter(Email.application_id == app.id)
-                .order_by(Email.id.desc())
-                .first()
-            )
+            email_info = session.query(Email).filter(Email.application_id == app.id).order_by(Email.id.desc()).first()
             res_info = (
                 session.query(ResumeVersion)
                 .filter(ResumeVersion.application_id == app.id)
@@ -472,10 +442,7 @@ class RecruitingApp(App[Any]):
                 .first()
             )
             history_info = (
-                session.query(History)
-                .filter(History.application_id == app.id)
-                .order_by(History.timestamp.desc())
-                .all()
+                session.query(History).filter(History.application_id == app.id).order_by(History.timestamp.desc()).all()
             )
 
             # Format inspect details
@@ -483,9 +450,7 @@ class RecruitingApp(App[Any]):
             details_str += f"- **Company**: {app.job.company.name}\n"
             details_str += f"- **Job Title**: {app.job.title}\n"
             details_str += f"- **State**: {app.state} (Stage {app.current_stage})\n"
-            details_str += (
-                f"- **Weighted Score**: {f'{app.score:.2f}' if app.score else 'N/A'}\n"
-            )
+            details_str += f"- **Weighted Score**: {f'{app.score:.2f}' if app.score else 'N/A'}\n"
             if app.score_breakdown:
                 details_str += f"  - Breakdown: {app.score_breakdown}\n"
             details_str += f"- **Resume Path**: {app.tailored_resume_path or 'N/A'}\n\n"
@@ -498,9 +463,7 @@ class RecruitingApp(App[Any]):
             if email_info:
                 details_str += "**Outreach Email:**\n"
                 details_str += f"- Subject: {email_info.subject}\n"
-                details_str += (
-                    f"- Gmail Draft ID: {email_info.gmail_draft_id or 'N/A'}\n"
-                )
+                details_str += f"- Gmail Draft ID: {email_info.gmail_draft_id or 'N/A'}\n"
                 details_str += f"- HTML Body Preview:\n\n{email_info.body[:2000]}\n\n"
 
             if history_info:

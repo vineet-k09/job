@@ -74,9 +74,7 @@ class MockLLMProvider:
                 ]
             )
         elif "EmailDiscoveryResponse" in str(schema):
-            return EmailDiscoveryResponse(
-                email="alice@mocktech.com", pattern_used="explicit"
-            )
+            return EmailDiscoveryResponse(email="alice@mocktech.com", pattern_used="explicit")
         elif "OpportunityScoreResponse" in str(schema):
             return OpportunityScoreResponse(
                 role_match=0.9,

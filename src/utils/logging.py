@@ -1,7 +1,7 @@
 import json
 import logging
 import os
-from datetime import datetime
+from datetime import UTC, datetime
 from typing import Any
 
 from rich.logging import RichHandler
@@ -17,7 +17,7 @@ class StructuredFormatter(logging.Formatter):
 
     def format(self, record: logging.LogRecord) -> str:
         log_data: dict[str, Any] = {
-            "timestamp": datetime.utcnow().isoformat() + "Z",
+            "timestamp": datetime.now(UTC).isoformat().replace("+00:00", "Z"),
             "level": record.levelname,
             "message": record.getMessage(),
             "logger": record.name,
@@ -42,15 +42,13 @@ class StructuredFormatter(logging.Formatter):
 
 
 def get_logger(name: str) -> logging.Logger:
-    logger = logging.getLogger(name)
-    logger.setLevel(logging.INFO)
+    parent_logger = logging.getLogger("recruiting-platform")
+    parent_logger.setLevel(logging.INFO)
 
-    # Avoid adding duplicate handlers if logger is already configured
-    if not logger.handlers:
+    # Avoid adding duplicate handlers if parent logger is already configured
+    if not parent_logger.handlers:
         # Console Handler with Rich
-        console_handler = RichHandler(
-            rich_tracebacks=True, markup=True, show_path=False
-        )
+        console_handler = RichHandler(rich_tracebacks=True, markup=True, show_path=False)
         console_handler.setLevel(logging.INFO)
 
         # File Handler (structured JSON logs)
@@ -59,10 +57,10 @@ def get_logger(name: str) -> logging.Logger:
         file_formatter = StructuredFormatter()
         file_handler.setFormatter(file_formatter)
 
-        logger.addHandler(console_handler)
-        logger.addHandler(file_handler)
+        parent_logger.addHandler(console_handler)
+        parent_logger.addHandler(file_handler)
 
-    return logger
+    return logging.getLogger(name)
 
 
 class PipelineLogger:

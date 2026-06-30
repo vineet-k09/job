@@ -28,9 +28,7 @@ class BrowserProvider:
     def fetch_page_http(self, url: str) -> str:
         """Fetches page content using standard HTTP requests."""
         try:
-            with httpx.Client(
-                headers=HEADERS, follow_redirects=True, timeout=15.0
-            ) as client:
+            with httpx.Client(headers=HEADERS, follow_redirects=True, timeout=15.0) as client:
                 response = client.get(url)
                 response.raise_for_status()
                 return response.text
@@ -54,18 +52,25 @@ class BrowserProvider:
                 browser.close()
                 return content
         except Exception as e:
-            logger.warning(
-                f"Playwright fetch failed for {url}: {e}. Falling back to HTTP."
-            )
+            logger.warning(f"Playwright fetch failed for {url}: {e}. Falling back to HTTP.")
             return self.fetch_page_http(url)
 
     def fetch_page(self, url: str, use_playwright: bool = False) -> str:
         """
         Fetches page using either Playwright or direct HTTP.
+        If direct HTTP fails, automatically falls back to Playwright.
         """
         if use_playwright:
             return self.fetch_page_playwright(url)
-        return self.fetch_page_http(url)
+        try:
+            return self.fetch_page_http(url)
+        except Exception as e:
+            logger.info(f"Direct HTTP fetch failed for {url} ({e}). Retrying with Playwright...")
+            try:
+                return self.fetch_page_playwright(url)
+            except Exception as pe:
+                logger.error(f"Both HTTP and Playwright fetch failed for {url}: {pe}")
+                raise RuntimeError(f"Failed to fetch page {url}") from pe
 
     def extract_text(self, html: str) -> str:
         """Extracts text content from HTML, removing scripts, styles, etc."""
@@ -91,13 +96,14 @@ class BrowserProvider:
 
     def search_google(self, query: str, num_results: int = 5) -> list[dict[str, str]]:
         """
-        Runs a Google search and parses organic results.
-        Uses public HTML Google search pages.
+        Runs a search and parses organic results.
+        Tries DuckDuckGo first, falls back to Yahoo Search if blocked or 0 results.
         """
         encoded_query = urllib.parse.quote_plus(query)
         url = f"https://html.duckduckgo.com/html/?q={encoded_query}"
 
         results = []
+        # 1. Try DuckDuckGo
         try:
             html = self.fetch_page_http(url)
             soup = BeautifulSoup(html, "html.parser")
@@ -116,7 +122,6 @@ class BrowserProvider:
                 href = title_elem.get("href", "")
 
                 # Clean DuckDuckGo redirect URLs if necessary
-                # DDG uses: /l/?kh=-1&uddg=https%3A%2F%2Fexample.com
                 if href.startswith("/l/?"):
                     parsed_href = urllib.parse.urlparse(href)
                     query_params = urllib.parse.parse_qs(parsed_href.query)
@@ -126,11 +131,48 @@ class BrowserProvider:
                 snippet = link.get_text().strip()
                 results.append({"title": title, "url": href, "snippet": snippet})
         except Exception as e:
-            logger.error(f"Search failed for query '{query}': {e}")
-            # Try a fallback mock result to avoid blocking the pipeline completely
-            logger.warning(
-                "Generating placeholder search results to ensure continuity."
-            )
+            logger.info(f"DuckDuckGo search raised exception for query '{query}': {e}")
+
+        # 2. If DuckDuckGo returned 0 results, fall back to Yahoo Search
+        if not results:
+            logger.info(f"DuckDuckGo returned 0 results for '{query}'. Retrying with Yahoo Search...")
+            try:
+                yahoo_url = f"https://search.yahoo.com/search?p={encoded_query}"
+                import re
+
+                html = self.fetch_page_http(yahoo_url)
+                soup = BeautifulSoup(html, "html.parser")
+                seen = set()
+
+                for a in soup.find_all("a"):
+                    href = a.get("href", "")
+                    if "r.search.yahoo.com" in href and "/RU=" in href:
+                        match = re.search(r"/RU=([^/]+)", href)
+                        if match:
+                            dest_url = urllib.parse.unquote(match.group(1))
+                            if dest_url in seen or "yahoo.com" in dest_url or "yahoo.co" in dest_url:
+                                continue
+                            seen.add(dest_url)
+                            title = a.get_text().strip()
+                            h3 = a.find_parent("h3")
+                            if h3:
+                                title = h3.get_text().strip()
+
+                            snippet = ""
+                            parent = a.find_parent("div")
+                            if parent:
+                                sib = parent.find_next_sibling()
+                                if sib:
+                                    snippet = sib.get_text().strip()
+                            results.append({"title": title or dest_url, "url": dest_url, "snippet": snippet})
+                            if len(results) >= num_results:
+                                break
+            except Exception as ye:
+                logger.error(f"Yahoo Search also failed for query '{query}': {ye}")
+
+        # 3. If both failed, generate placeholder search results to ensure continuity
+        if not results:
+            logger.warning(f"All search engines failed for query '{query}'. Generating placeholder results.")
             results = [
                 {
                     "title": f"Search result for {query}",

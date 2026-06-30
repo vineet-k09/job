@@ -23,10 +23,7 @@ class GeminiProvider(BaseLLMProvider):
 
     def generate_text(self, prompt: str, system_prompt: str | None = None) -> str:
         model_name = self.model or "gemini-1.5-flash"
-        url = (
-            self.api_url
-            or f"https://generativelanguage.googleapis.com/v1beta/models/{model_name}:generateContent"
-        )
+        url = self.api_url or f"https://generativelanguage.googleapis.com/v1beta/models/{model_name}:generateContent"
 
         params = {"key": self.api_key}
         headers = {"Content-Type": "application/json"}
@@ -46,9 +43,7 @@ class GeminiProvider(BaseLLMProvider):
 
         try:
             with httpx.Client(timeout=60.0) as client:
-                response = client.post(
-                    url, headers=headers, json=payload, params=params
-                )
+                response = client.post(url, headers=headers, json=payload, params=params)
                 response.raise_for_status()
                 result = response.json()
                 return str(result["candidates"][0]["content"]["parts"][0]["text"])
@@ -56,9 +51,7 @@ class GeminiProvider(BaseLLMProvider):
             logger.error(f"Error calling Gemini API: {e}")
             raise RuntimeError(f"Gemini provider call failed: {e}") from e
 
-    def generate_json(
-        self, prompt: str, schema: type[BaseModel], system_prompt: str | None = None
-    ) -> BaseModel:
+    def generate_json(self, prompt: str, schema: type[BaseModel], system_prompt: str | None = None) -> BaseModel:
         json_instruction = (
             f"\n\nReturn the response strictly as a JSON object matching this schema:\n"
             f"{schema.model_json_schema()}\n"
@@ -72,9 +65,5 @@ class GeminiProvider(BaseLLMProvider):
         try:
             return schema.model_validate_json(cleaned_text)
         except Exception as e:
-            logger.error(
-                f"Failed to parse Gemini response into schema {schema.__name__}. Error: {e}"
-            )
-            raise ValueError(
-                f"JSON validation failed for schema {schema.__name__}: {e}"
-            ) from e
+            logger.error(f"Failed to parse Gemini response into schema {schema.__name__}. Error: {e}")
+            raise ValueError(f"JSON validation failed for schema {schema.__name__}: {e}") from e

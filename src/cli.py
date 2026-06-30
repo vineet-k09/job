@@ -17,9 +17,7 @@ console = Console()
 def get_runner(config_path: str = "config.yaml") -> PipelineRunner:
     """Helper to initialize PipelineRunner with error handling."""
     if not os.path.exists(config_path):
-        console.print(
-            f"[bold red]Error:[/bold red] Config file '{config_path}' not found. Please create one."
-        )
+        console.print(f"[bold red]Error:[/bold red] Config file '{config_path}' not found. Please create one.")
         raise typer.Exit(code=1)
     try:
         return PipelineRunner(config_path)
@@ -36,30 +34,22 @@ def run_pipeline(
     """
     Run the entire recruiting pipeline end-to-end (discover, filter, research, tailor, draft).
     """
-    console.print(
-        "[bold green]Starting Recruiting Platform End-to-End Pipeline...[/bold green]"
-    )
+    console.print("[bold green]Starting Recruiting Platform End-to-End Pipeline...[/bold green]")
     runner = get_runner(config)
     try:
         run_id = runner.run(max_stage=12, limit_drafts=limit)
-        console.print(
-            f"[bold green]Pipeline completed successfully for {run_id}![/bold green]"
-        )
+        console.print(f"[bold green]Pipeline completed successfully for {run_id}![/bold green]")
     except Exception as e:
         console.print(f"[bold red]Pipeline failed:[/bold red] {e}")
         raise typer.Exit(code=1) from e
 
 
 @app.command("search")
-def search_jobs(
-    config: str = typer.Option("config.yaml", help="Path to config.yaml")
-) -> None:
+def search_jobs(config: str = typer.Option("config.yaml", help="Path to config.yaml")) -> None:
     """
     Stage 0 - 2: Search for jobs, discover companies, and apply filtering criteria.
     """
-    console.print(
-        "[bold cyan]Executing Job & Company Discovery (Stages 0-2)...[/bold cyan]"
-    )
+    console.print("[bold cyan]Executing Job & Company Discovery (Stages 0-2)...[/bold cyan]")
     runner = get_runner(config)
     try:
         run_id = runner.run(max_stage=2)
@@ -78,15 +68,11 @@ def research_companies(
     """
     Stage 3 - 5: Gather research on filtered companies and discover contacts & email patterns.
     """
-    console.print(
-        "[bold magenta]Executing Research and Contact Discovery (Stages 3-5)...[/bold magenta]"
-    )
+    console.print("[bold magenta]Executing Research and Contact Discovery (Stages 3-5)...[/bold magenta]")
     runner = get_runner(config)
     try:
         run_id = runner.run(resume_only=True, max_stage=5)
-        console.print(
-            f"[bold green]Research completed for {run_id}. Contacts and email profiles added.[/bold green]"
-        )
+        console.print(f"[bold green]Research completed for {run_id}. Contacts and email profiles added.[/bold green]")
     except Exception as e:
         console.print(f"[bold red]Research failed:[/bold red] {e}")
         raise typer.Exit(code=1) from e
@@ -99,9 +85,7 @@ def tailor_resumes(
     """
     Stage 6 - 7: Score opportunities and generate tailored Typst resumes.
     """
-    console.print(
-        "[bold yellow]Executing Opportunity Scoring & Resume Tailoring (Stages 6-7)...[/bold yellow]"
-    )
+    console.print("[bold yellow]Executing Opportunity Scoring & Resume Tailoring (Stages 6-7)...[/bold yellow]")
     runner = get_runner(config)
     try:
         run_id = runner.run(resume_only=True, max_stage=7)
@@ -121,15 +105,11 @@ def create_drafts(
     """
     Stage 8 - 10: Generate personalized emails, validate content, and save Gmail drafts.
     """
-    console.print(
-        "[bold blue]Executing Email Generation & Gmail Draft Creation (Stages 8-10)...[/bold blue]"
-    )
+    console.print("[bold blue]Executing Email Generation & Gmail Draft Creation (Stages 8-10)...[/bold blue]")
     runner = get_runner(config)
     try:
         run_id = runner.run(resume_only=True, max_stage=10, limit_drafts=limit)
-        console.print(
-            f"[bold green]Draft generation completed for {run_id}. Gmail drafts populated.[/bold green]"
-        )
+        console.print(f"[bold green]Draft generation completed for {run_id}. Gmail drafts populated.[/bold green]")
     except Exception as e:
         console.print(f"[bold red]Drafting failed:[/bold red] {e}")
         raise typer.Exit(code=1) from e
@@ -142,15 +122,11 @@ def resume_pipeline(
     """
     Resume processing all paused/interrupted applications from their saved stage.
     """
-    console.print(
-        "[bold green]Resuming Pipeline for Pause-State Applications...[/bold green]"
-    )
+    console.print("[bold green]Resuming Pipeline for Pause-State Applications...[/bold green]")
     runner = get_runner(config)
     try:
         run_id = runner.run(resume_only=True, max_stage=12)
-        console.print(
-            f"[bold green]Resumed pipeline runs finished for {run_id}.[/bold green]"
-        )
+        console.print(f"[bold green]Resumed pipeline runs finished for {run_id}.[/bold green]")
     except Exception as e:
         console.print(f"[bold red]Resume execution failed:[/bold red] {e}")
         raise typer.Exit(code=1) from e
@@ -173,6 +149,23 @@ def retry_failed_applications(
         raise typer.Exit(code=1) from e
 
 
+@app.command("auth")
+def authenticate_gmail(
+    config: str = typer.Option("config.yaml", help="Path to config.yaml"),
+) -> None:
+    """
+    Authenticate Gmail API connection interactively to generate token.json.
+    """
+    console.print("[bold cyan]Starting interactive Gmail authentication...[/bold cyan]")
+    runner = get_runner(config)
+    success = runner.gmail.authenticate(interactive=True)
+    if success:
+        console.print("[bold green]Gmail authentication completed successfully! Credentials saved.[/bold green]")
+    else:
+        console.print("[bold red]Gmail authentication failed.[/bold red]")
+        raise typer.Exit(code=1)
+
+
 @app.command("init-db")
 def initialize_database(
     config: str = typer.Option("config.yaml", help="Path to config.yaml"),
@@ -182,9 +175,7 @@ def initialize_database(
     """
     runner = get_runner(config)
     db_path = runner.config.pipeline.db_path
-    console.print(
-        f"[bold green]Initializing SQLite database at: {db_path}[/bold green]"
-    )
+    console.print(f"[bold green]Initializing SQLite database at: {db_path}[/bold green]")
     try:
         db_init(db_path)
         console.print("[bold green]Database tables created successfully.[/bold green]")
@@ -230,9 +221,7 @@ def config_summary(
 
 
 @app.command("status")
-def view_status(
-    config: str = typer.Option("config.yaml", help="Path to config.yaml")
-) -> None:
+def view_status(config: str = typer.Option("config.yaml", help="Path to config.yaml")) -> None:
     """
     View current status and statistics of job applications.
     """
@@ -242,25 +231,15 @@ def view_status(
 
     try:
         total_apps = session.query(Application).count()
-        completed_apps = (
-            session.query(Application).filter(Application.state == "Completed").count()
-        )
+        completed_apps = session.query(Application).filter(Application.state == "Completed").count()
         failed_apps = (
             session.query(Application)
-            .filter(
-                Application.state.in_(
-                    ["Failed", "Research Failed", "Draft Failed", "Validation Failed"]
-                )
-            )
+            .filter(Application.state.in_(["Failed", "Research Failed", "Draft Failed", "Validation Failed"]))
             .count()
         )
         filtered_apps = (
             session.query(Application)
-            .filter(
-                Application.state.in_(
-                    ["Excluded Company", "Salary Too Low", "Ghost Job"]
-                )
-            )
+            .filter(Application.state.in_(["Excluded Company", "Salary Too Low", "Ghost Job"]))
             .count()
         )
 
@@ -271,9 +250,7 @@ def view_status(
             f"[bold yellow]Filtered Out / Excluded:[/bold yellow] {filtered_apps}\n\n"
             f"[bold]Active runs in progress:[/bold] {session.query(Run).filter(Run.status == 'running').count()}"
         )
-        console.print(
-            Panel(panel_content, title="Recruiting Pipeline Dashboard", expand=False)
-        )
+        console.print(Panel(panel_content, title="Recruiting Pipeline Dashboard", expand=False))
 
         # Display recent 10 applications
         if total_apps > 0:
@@ -289,12 +266,7 @@ def view_status(
             app_table.add_column("State/Terminal Status", style="green")
             app_table.add_column("Score", style="yellow")
 
-            recent = (
-                session.query(Application)
-                .order_by(Application.updated_at.desc())
-                .limit(10)
-                .all()
-            )
+            recent = session.query(Application).order_by(Application.updated_at.desc()).limit(10).all()
             for app in recent:
                 score_str = f"{app.score:.2f}" if app.score else "N/A"
                 app_table.add_row(
@@ -312,9 +284,7 @@ def view_status(
 
 
 @app.command("ui")
-def start_tui(
-    config: str = typer.Option("config.yaml", help="Path to config.yaml")
-) -> None:
+def start_tui(config: str = typer.Option("config.yaml", help="Path to config.yaml")) -> None:
     """
     Launch the professional Textual terminal user interface.
     """

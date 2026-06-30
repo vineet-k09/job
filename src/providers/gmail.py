@@ -62,22 +62,16 @@ class GmailProvider:
                     return False
 
                 if not interactive:
-                    logger.error(
-                        "Gmail authorization required but running in non-interactive mode."
-                    )
+                    logger.error("Gmail authorization required but running in non-interactive mode.")
                     return False
 
                 try:
-                    flow = InstalledAppFlow.from_client_secrets_file(
-                        self.credentials_path, self.scopes
-                    )
-                    self.creds = flow.run_local_server(port=0)
+                    flow = InstalledAppFlow.from_client_secrets_file(self.credentials_path, self.scopes)
+                    self.creds = flow.run_local_server(port=8080)
                     # Save the credentials for the next run
                     with open(self.token_path, "w") as token:
                         token.write(self.creds.to_json())
-                    logger.info(
-                        "Successfully authenticated Gmail and saved credentials."
-                    )
+                    logger.info("Successfully authenticated Gmail and saved credentials.")
                 except Exception as e:
                     logger.error(f"Gmail OAuth flow failed: {e}")
                     return False
@@ -103,9 +97,7 @@ class GmailProvider:
         if not self.service:
             # Try to authenticate silently
             if not self.authenticate(interactive=False):
-                raise RuntimeError(
-                    "Gmail service not authenticated. Cannot create draft."
-                )
+                raise RuntimeError("Gmail service not authenticated. Cannot create draft.")
 
         message = MIMEMultipart()
         message["to"] = to_email
@@ -128,9 +120,7 @@ class GmailProvider:
                     attachment = MIMEBase(main_type, sub_type)
                     attachment.set_payload(fp.read())
                 encoders.encode_base64(attachment)
-                attachment.add_header(
-                    "Content-Disposition", "attachment", filename=filename
-                )
+                attachment.add_header("Content-Disposition", "attachment", filename=filename)
                 message.attach(attachment)
                 logger.info(f"Attached resume {filename} to draft message.")
             except Exception as e:
@@ -142,12 +132,7 @@ class GmailProvider:
         try:
             draft_body = {"message": {"raw": raw_message}}
             assert self.service is not None
-            draft = (
-                self.service.users()
-                .drafts()
-                .create(userId="me", body=draft_body)
-                .execute()
-            )
+            draft = self.service.users().drafts().create(userId="me", body=draft_body).execute()
             logger.info(f"Created draft successfully. Draft ID: {draft['id']}")
             return str(draft["id"])
         except Exception as e:

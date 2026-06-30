@@ -14,6 +14,7 @@ help:
 	@echo "  make draft     - Run Stage 8-10 (Email Gen and Gmail Draft Creation)"
 	@echo "  make resume    - Resume any active/paused job applications"
 	@echo "  make retry     - Reset failed applications and retry them"
+	@echo "  make auth      - Authenticate Gmail API connection interactively"
 	@echo "  make ui        - Launch the Textual terminal user interface"
 	@echo "  make clean     - Clean temporary Python files and logs"
 
@@ -53,6 +54,9 @@ resume:
 
 retry:
 	uv run recruiting-platform retry
+
+auth:
+	uv run recruiting-platform auth
 
 ui:
 	uv run recruiting-platform ui

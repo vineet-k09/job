@@ -93,9 +93,10 @@ prompts:
 
     Create a tailored version of the resume. Follow these guidelines:
     - Reorder sections to highlight relevant experience first.
-    - Emphasize skills and bullet points that match the job requirements (e.g. {tech_stack}).
-    - Improve wording and add relevant ATS keywords matching the job.
-    - DO NOT fabricate projects, experience, or achievements. Ensure all information is truthful.
+    - Emphasize existing skills and bullet points in the Base Resume that match the job requirements (e.g. {tech_stack}).
+    - ONLY include or highlight technical skills and tools that are already present in the Base Resume.
+    - DO NOT add any new languages, frameworks, databases, or tools (e.g. do not add Rust, Elixir, WebRTC, FFmpeg, AWS, Golang, Scala, etc.) to the tailored resume if they are not already in the Base Resume.
+    - Improve wording and add relevant ATS keywords matching the job, but do not fabricate any projects, experience, or achievements. Ensure all information is 100% truthful and aligns with the Base Resume.
     - Output reasoning and the modifications list.
 
   email_generation: |
@@ -112,5 +113,6 @@ prompts:
     - Write a short, punchy subject line.
     - Write a concise, respectful, non-spammy email body.
     - Reference specific aspects of their product or tech stack to show genuine interest.
-    - Explain how my experience aligns perfectly with their role without inventing qualifications.
-    - Do not use a generic template. Ensure it feels human and targeted.
+    - Explain how my experience aligns perfectly with their role based ONLY on the skills explicitly listed in my Tailored Skills. DO NOT invent or claim experience with any other languages, libraries, or infrastructures (e.g., do not claim experience with Rust, Elixir, WebRTC, FFmpeg, or GPU clusters unless they are in my Tailored Skills list).
+    - Sign off the email using the name "Vineet Kushwaha". DO NOT use placeholders like "[Your Name]", "[Candidate Name]", or "[My Name]".
+    - Ensure there are no placeholders of any kind in the final email.

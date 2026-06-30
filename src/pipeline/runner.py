@@ -1,4 +1,4 @@
-from datetime import date, datetime
+from datetime import UTC, date, datetime
 
 from sqlalchemy.orm import Session
 
@@ -33,15 +33,10 @@ def generate_run_id(session: Session) -> str:
     """
     Generates a unique Run ID: RUN-YYYYMMDD-NNN.
     """
-    today_str = datetime.utcnow().strftime("%Y%m%d")
+    today_str = datetime.now(UTC).strftime("%Y%m%d")
     prefix = f"RUN-{today_str}-"
 
-    existing_runs = (
-        session.query(Run)
-        .filter(Run.id.like(f"{prefix}%"))
-        .order_by(Run.id.desc())
-        .all()
-    )
+    existing_runs = session.query(Run).filter(Run.id.like(f"{prefix}%")).order_by(Run.id.desc()).all()
 
     if not existing_runs:
         return f"{prefix}001"
@@ -81,11 +76,7 @@ class PipelineRunner:
         Count draft emails successfully created in Gmail today.
         """
         today_start = datetime.combine(date.today(), datetime.min.time())
-        count = (
-            session.query(Email)
-            .filter(Email.status == "draft_created", Email.created_at >= today_start)
-            .count()
-        )
+        count = session.query(Email).filter(Email.status == "draft_created", Email.created_at >= today_start).count()
         return count
 
     def run(
@@ -110,6 +101,13 @@ class PipelineRunner:
         session.add(new_run)
         session.commit()
 
+        if max_stage >= 10:
+            import sys
+            interactive = sys.stdout.isatty()
+            p_log.info("Checking Gmail API credentials...")
+            if not self.gmail.authenticate(interactive=interactive):
+                p_log.warning("Gmail API authentication failed. Draft creation stages will be skipped/paused.")
+
         try:
             terminal_states = [
                 "Completed",
@@ -127,11 +125,7 @@ class PipelineRunner:
                 "Failed",
             ]
 
-            active_apps = (
-                session.query(Application)
-                .filter(Application.state.notin_(terminal_states))
-                .all()
-            )
+            active_apps = session.query(Application).filter(Application.state.notin_(terminal_states)).all()
 
             if active_apps:
                 p_log.info(f"Resuming {len(active_apps)} interrupted applications...")
@@ -142,17 +136,11 @@ class PipelineRunner:
                 session.commit()
                 return run_id
             else:
-                p_log.info(
-                    "No interrupted applications found. Running fresh discovery..."
-                )
+                p_log.info("No interrupted applications found. Running fresh discovery...")
                 # Stage 0: Company Discovery
-                companies = run_stage_0_company_discovery(
-                    session, self.config, self.llm, self.browser, run_id
-                )
+                companies = run_stage_0_company_discovery(session, self.config, self.llm, self.browser, run_id)
                 # Stage 1: Job Discovery
-                jobs = run_stage_1_job_discovery(
-                    session, self.config, self.llm, self.browser, companies, run_id
-                )
+                jobs = run_stage_1_job_discovery(session, self.config, self.llm, self.browser, companies, run_id)
                 # Stage 2: Filtering
                 active_apps = run_stage_2_filtering(session, self.config, jobs, run_id)
 
@@ -171,13 +159,13 @@ class PipelineRunner:
                 self._process_application(session, app, run_id, max_stage)
 
             new_run.status = "completed"
-            new_run.completed_at = datetime.utcnow()
+            new_run.completed_at = datetime.now(UTC).replace(tzinfo=None)
             session.commit()
             p_log.info("Pipeline run execution finished.", status="COMPLETED")
 
         except Exception as e:
             new_run.status = "failed"
-            new_run.completed_at = datetime.utcnow()
+            new_run.completed_at = datetime.now(UTC).replace(tzinfo=None)
             session.commit()
             p_log.error(f"Pipeline execution crashed: {e}", status="CRASHED")
             raise e
@@ -196,13 +184,13 @@ class PipelineRunner:
         p_log = PipelineLogger(logger, run_id, "Pipeline Retry")
         p_log.info("Resetting failed applications for retry...")
 
+        new_run = Run(id=run_id, status="running")
+        session.add(new_run)
+        session.commit()
+
         failed_apps = (
             session.query(Application)
-            .filter(
-                Application.state.in_(
-                    ["Failed", "Research Failed", "Draft Failed", "Validation Failed"]
-                )
-            )
+            .filter(Application.state.in_(["Failed", "Research Failed", "Draft Failed", "Validation Failed"]))
             .all()
         )
 
@@ -220,8 +208,8 @@ class PipelineRunner:
                 app.current_stage = 10
                 app.state = "Gmail Draft Creation"
             elif old_state == "Validation Failed":
-                app.current_stage = 9
-                app.state = "Validation"
+                app.current_stage = 7
+                app.state = "Resume Tailoring"
             else:
                 # Default fallback: resume tailoring
                 app.current_stage = 7
@@ -238,85 +226,67 @@ class PipelineRunner:
             )
             p_log.info(f"Reset Application #{app.id} state to '{app.state}' for retry.")
 
+        new_run.status = "completed"
+        new_run.completed_at = datetime.now(UTC).replace(tzinfo=None)
         session.commit()
         session.close()
 
         # Run normal pipeline to process the reset applications
         return self.run(resume_only=True)
 
-    def _process_application(
-        self, session: Session, app: Application, run_id: str, max_stage: int = 12
-    ) -> None:
+    def _process_application(self, session: Session, app: Application, run_id: str, max_stage: int = 12) -> None:
         """
         Drives a single Application forward through the stages, up to max_stage.
         """
         company = app.job.company
-        p_log = PipelineLogger(
-            logger, run_id, f"App #{app.id} processing", company.name
-        )
+        p_log = PipelineLogger(logger, run_id, f"App #{app.id} processing", company.name)
 
         try:
             # Stage 3: Company Research
             if app.current_stage == 3 and max_stage >= 3:
-                success = run_stage_3_company_research(
-                    session, self.config, self.llm, self.browser, app, run_id
-                )
+                success = run_stage_3_company_research(session, self.config, self.llm, self.browser, app, run_id)
                 if not success:
                     return
 
             # Stage 4: Contact Research
             if app.current_stage == 4 and max_stage >= 4:
-                success = run_stage_4_contact_research(
-                    session, self.config, self.llm, self.browser, app, run_id
-                )
+                success = run_stage_4_contact_research(session, self.config, self.llm, self.browser, app, run_id)
                 if not success:
                     return
 
             # Stage 5: Professional Email Discovery
             if app.current_stage == 5 and max_stage >= 5:
-                success = run_stage_5_email_discovery(
-                    session, self.config, self.llm, self.browser, app, run_id
-                )
+                success = run_stage_5_email_discovery(session, self.config, self.llm, self.browser, app, run_id)
                 if not success:
                     return
 
             # Stage 6: Opportunity Scoring
             if app.current_stage == 6 and max_stage >= 6:
-                success = run_stage_6_opportunity_scoring(
-                    session, self.config, self.llm, app, run_id
-                )
+                success = run_stage_6_opportunity_scoring(session, self.config, self.llm, app, run_id)
                 if not success:
                     return
 
             # Stage 7: Resume Tailoring
             if app.current_stage == 7 and max_stage >= 7:
-                success = run_stage_7_resume_tailoring(
-                    session, self.config, self.llm, app, run_id
-                )
+                success = run_stage_7_resume_tailoring(session, self.config, self.llm, app, run_id)
                 if not success:
                     return
 
             # Stage 8: Email Generation
             if app.current_stage == 8 and max_stage >= 8:
-                success = run_stage_8_email_generation(
-                    session, self.config, self.llm, app, run_id
-                )
+                success = run_stage_8_email_generation(session, self.config, self.llm, app, run_id)
                 if not success:
                     return
 
             # Stage 9: Validation
             if app.current_stage == 9 and max_stage >= 9:
-                success = run_stage_9_validation(
-                    session, self.config, self.llm, app, run_id
-                )
+                success = run_stage_9_validation(session, self.config, self.llm, app, run_id)
                 if not success:
                     return
 
             # Stage 10: Gmail Draft Creation
             if app.current_stage == 10 and max_stage >= 10:
-                success = run_stage_10_gmail_draft_creation(
-                    session, self.gmail, app, run_id
-                )
+                success = run_stage_10_gmail_draft_creation(session, self.gmail, app, run_id)
                 if not success:
                     return
 

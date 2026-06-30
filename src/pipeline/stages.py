@@ -2,7 +2,7 @@ import json
 import logging
 import os
 import subprocess
-from datetime import datetime
+from datetime import UTC, datetime
 
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
@@ -32,9 +32,7 @@ logger = logging.getLogger("recruiting-platform.pipeline.stages")
 
 class DiscoveredCompany(BaseModel):
     name: str = Field(description="Name of the company")
-    domain: str | None = Field(
-        description="Primary domain of the company, e.g. company.com"
-    )
+    domain: str | None = Field(description="Primary domain of the company, e.g. company.com")
     employee_count: int | None = Field(description="Estimated number of employees")
     industry: str | None = Field(description="Industry vertical, e.g. SaaS, Fintech")
 
@@ -45,17 +43,11 @@ class CompanyListResponse(BaseModel):
 
 class DiscoveredJob(BaseModel):
     title: str = Field(description="Title of the job role")
-    url: str | None = Field(
-        description="URL to the job listing or company careers page"
-    )
+    url: str | None = Field(description="URL to the job listing or company careers page")
     location: str | None = Field(description="Job location details")
     salary: str | None = Field(description="Salary range or package details")
-    experience_years: float | None = Field(
-        description="Required experience years, if mentioned"
-    )
-    description: str | None = Field(
-        description="Brief summary of requirements or job description"
-    )
+    experience_years: float | None = Field(description="Required experience years, if mentioned")
+    description: str | None = Field(description="Brief summary of requirements or job description")
 
 
 class JobListResponse(BaseModel):
@@ -63,30 +55,18 @@ class JobListResponse(BaseModel):
 
 
 class CompanyResearchResponse(BaseModel):
-    business_model: str = Field(
-        description="Business model and core product description"
-    )
+    business_model: str = Field(description="Business model and core product description")
     funding: str = Field(description="Details of latest funding or launches")
-    tech_stack: list[str] = Field(
-        description="List of core languages, frameworks, or databases used"
-    )
-    culture: str = Field(
-        description="Engineering culture or notable developer initiatives"
-    )
-    leadership: list[str] = Field(
-        description="Founders, CEO, CTO, or VP Engineering details"
-    )
+    tech_stack: list[str] = Field(description="List of core languages, frameworks, or databases used")
+    culture: str = Field(description="Engineering culture or notable developer initiatives")
+    leadership: list[str] = Field(description="Founders, CEO, CTO, or VP Engineering details")
 
 
 class DiscoveredContact(BaseModel):
     name: str = Field(description="Full name of the contact person")
     role: str = Field(description="Role or title of the contact")
-    email_pattern: str | None = Field(
-        description="Observed email format, e.g., first.last@company.com"
-    )
-    linkedin_url: str | None = Field(
-        description="LinkedIn profile link if available"
-    )
+    email_pattern: str | None = Field(description="Observed email format, e.g., first.last@company.com")
+    linkedin_url: str | None = Field(description="LinkedIn profile link if available")
 
 
 class ContactListResponse(BaseModel):
@@ -95,43 +75,23 @@ class ContactListResponse(BaseModel):
 
 class EmailDiscoveryResponse(BaseModel):
     email: str | None = Field(description="Discovered professional email address")
-    pattern_used: str | None = Field(
-        description="The pattern or source used to find/verify this email"
-    )
+    pattern_used: str | None = Field(description="The pattern or source used to find/verify this email")
 
 
 class OpportunityScoreResponse(BaseModel):
-    role_match: float = Field(
-        description="Score between 0.0 and 1.0 representing how well the role fits"
-    )
-    tech_stack: float = Field(
-        description="Score between 0.0 and 1.0 representing tech alignment"
-    )
-    salary: float = Field(
-        description="Score between 0.0 and 1.0 representing salary alignment"
-    )
-    company_quality: float = Field(
-        description="Score between 0.0 and 1.0 representing company status/domain"
-    )
-    growth: float = Field(
-        description="Score between 0.0 and 1.0 representing growth potential"
-    )
-    confidence: float = Field(
-        description="Score between 0.0 and 1.0 representing confidence in data quality"
-    )
+    role_match: float = Field(description="Score between 0.0 and 1.0 representing how well the role fits")
+    tech_stack: float = Field(description="Score between 0.0 and 1.0 representing tech alignment")
+    salary: float = Field(description="Score between 0.0 and 1.0 representing salary alignment")
+    company_quality: float = Field(description="Score between 0.0 and 1.0 representing company status/domain")
+    growth: float = Field(description="Score between 0.0 and 1.0 representing growth potential")
+    confidence: float = Field(description="Score between 0.0 and 1.0 representing confidence in data quality")
     reasoning: str = Field(description="Brief summary of scoring rationale")
 
 
 class ResumeTailorResponse(BaseModel):
-    tailored_typst_content: str = Field(
-        description="The complete modified Typst code for the resume"
-    )
-    keywords_added: list[str] = Field(
-        description="List of ATS keywords or skills added"
-    )
-    reasoning: str = Field(
-        description="Explanation of modifications and section ordering decisions"
-    )
+    tailored_typst_content: str = Field(description="The complete modified Typst code for the resume")
+    keywords_added: list[str] = Field(description="List of ATS keywords or skills added")
+    reasoning: str = Field(description="Explanation of modifications and section ordering decisions")
 
 
 class EmailGenResponse(BaseModel):
@@ -140,9 +100,7 @@ class EmailGenResponse(BaseModel):
 
 
 class ValidationResponse(BaseModel):
-    is_valid: bool = Field(
-        description="True if the resume and email contain no placeholders or hallucinated facts"
-    )
+    is_valid: bool = Field(description="True if the resume and email contain no placeholders or hallucinated facts")
     errors: list[str] = Field(description="List of validation errors found")
 
 
@@ -167,7 +125,9 @@ def run_stage_0_company_discovery(
 
     # Check cache first using a key representing this run's job prefs
     cache = DBCache(session)
-    cache_key = f"company_discovery_{config.job_preferences.geographies[0]}_{config.job_preferences.company_size.min_employees}"
+    cache_key = (
+        f"company_discovery_{config.job_preferences.geographies[0]}_{config.job_preferences.company_size.min_employees}"
+    )
     cached_data = cache.get(cache_key)
 
     discovered_companies_data = []
@@ -257,9 +217,7 @@ def run_stage_1_job_discovery(
                 try:
                     html = browser.fetch_page(result["url"], use_playwright=False)
                     scraped_text += f"\n--- {result['title']} ({result['url']}) ---\n"
-                    scraped_text += browser.extract_text(html)[
-                        :2000
-                    ]  # Limit chunk length
+                    scraped_text += browser.extract_text(html)[:2000]  # Limit chunk length
                 except Exception as e:
                     p_log.warning(f"Failed to scrape {result['url']}: {e}")
 
@@ -274,13 +232,9 @@ def run_stage_1_job_discovery(
                 try:
                     response = llm.generate_json(prompt, JobListResponse)
                     jobs_data = [j.model_dump() for j in response.jobs]  # type: ignore
-                    cache.set(
-                        cache_key, jobs_data, config.pipeline.cache_lifetime_seconds
-                    )
+                    cache.set(cache_key, jobs_data, config.pipeline.cache_lifetime_seconds)
                 except Exception as e:
-                    p_log.error(
-                        f"Failed to parse jobs list from LLM for {company.name}: {e}"
-                    )
+                    p_log.error(f"Failed to parse jobs list from LLM for {company.name}: {e}")
                     continue
             else:
                 p_log.warning(f"No scrapable text found for {company.name}")
@@ -290,9 +244,7 @@ def run_stage_1_job_discovery(
             # Check unique URL to prevent duplicate Job entries
             existing_job = None
             if j_data.get("url"):
-                existing_job = (
-                    session.query(Job).filter(Job.url == j_data["url"]).first()
-                )
+                existing_job = session.query(Job).filter(Job.url == j_data["url"]).first()
             if not existing_job:
                 new_job = Job(
                     company_id=company.id,
@@ -314,9 +266,7 @@ def run_stage_1_job_discovery(
     return all_jobs
 
 
-def run_stage_2_filtering(
-    session: Session, config: AppConfig, jobs: list[Job], run_id: str
-) -> list[Application]:
+def run_stage_2_filtering(session: Session, config: AppConfig, jobs: list[Job], run_id: str) -> list[Application]:
     """
     Stage 2: Filtering
     Screens jobs against exclusion rules (companies, keywords, salary limits)
@@ -332,9 +282,7 @@ def run_stage_2_filtering(
         p_log.company = company.name
 
         # Check if Application already exists for this job
-        existing_app = (
-            session.query(Application).filter(Application.job_id == job.id).first()
-        )
+        existing_app = session.query(Application).filter(Application.job_id == job.id).first()
         if existing_app:
             if existing_app.state not in [
                 "Completed",
@@ -347,9 +295,7 @@ def run_stage_2_filtering(
             continue
 
         # Create a new application
-        app = Application(
-            run_id=run_id, job_id=job.id, current_stage=2, state="Filtering"
-        )
+        app = Application(run_id=run_id, job_id=job.id, current_stage=2, state="Filtering")
         session.add(app)
         session.flush()  # Populate app.id
 
@@ -365,9 +311,7 @@ def run_stage_2_filtering(
 
         # Apply filters
         # 1. Company Name Exclusions
-        is_company_excluded = any(
-            ex_c.lower() in company.name.lower() for ex_c in config.exclusions.companies
-        )
+        is_company_excluded = any(ex_c.lower() in company.name.lower() for ex_c in config.exclusions.companies)
         if is_company_excluded:
             app.state = "Excluded Company"
             history.notes = f"Filtered out: company {company.name} is excluded."
@@ -375,24 +319,17 @@ def run_stage_2_filtering(
             continue
 
         # 2. Keyword Exclusions in title
-        is_keyword_excluded = any(
-            ex_k.lower() in job.title.lower() for ex_k in config.exclusions.keywords
-        )
+        is_keyword_excluded = any(ex_k.lower() in job.title.lower() for ex_k in config.exclusions.keywords)
         if is_keyword_excluded:
-            app.state = (
-                "Ghost Job"  # Or Excluded Keyword; matches Ghost Job / Skip states
-            )
-            history.notes = (
-                f"Filtered out: job title '{job.title}' contains excluded keywords."
-            )
+            app.state = "Ghost Job"  # Or Excluded Keyword; matches Ghost Job / Skip states
+            history.notes = f"Filtered out: job title '{job.title}' contains excluded keywords."
             p_log.info(f"Excluded job keyword in title: {job.title}", status="EXCLUDED")
             continue
 
         # 3. Experience Exclusions
         if (
             job.experience_years_required
-            and job.experience_years_required
-            > config.job_preferences.experience_years_max
+            and job.experience_years_required > config.job_preferences.experience_years_max
         ):
             app.state = "Ghost Job"  # Or too high experience
             history.notes = f"Filtered out: experience required ({job.experience_years_required} yrs) exceeds max ({config.job_preferences.experience_years_max} yrs)."
@@ -422,9 +359,7 @@ def run_stage_2_filtering(
 
     session.commit()
     p_log.company = None
-    p_log.info(
-        f"Initialized {len(active_applications)} active applications.", status="SUCCESS"
-    )
+    p_log.info(f"Initialized {len(active_applications)} active applications.", status="SUCCESS")
     return active_applications
 
 
@@ -490,9 +425,7 @@ def run_stage_3_company_research(
         try:
             response = llm.generate_json(prompt, CompanyResearchResponse)
             company.research_data = response.model_dump()
-            cache.set(
-                cache_key, company.research_data, config.pipeline.cache_lifetime_seconds
-            )
+            cache.set(cache_key, company.research_data, config.pipeline.cache_lifetime_seconds)
             session.commit()
         except Exception as e:
             p_log.error(f"LLM failed to compile company research structure: {e}")
@@ -546,9 +479,7 @@ def run_stage_4_contact_research(
     # Check if this company already has a completed application with a contact
     # Rule: "If a company only has one engineering contact available, consider the company itself contacted."
     previous_contact = (
-        session.query(Contact)
-        .filter(Contact.company_id == company.id, Contact.email.isnot(None))
-        .first()
+        session.query(Contact).filter(Contact.company_id == company.id, Contact.email.isnot(None)).first()
     )
 
     if previous_contact:
@@ -557,9 +488,7 @@ def run_stage_4_contact_research(
             session.query(Application)
             .filter(
                 Application.contact_id == previous_contact.id,
-                Application.state.in_(
-                    ["Completed", "Gmail Draft Creation", "Email Generation"]
-                ),
+                Application.state.in_(["Completed", "Gmail Draft Creation", "Email Generation"]),
             )
             .first()
         )
@@ -592,7 +521,9 @@ def run_stage_4_contact_research(
         contacts_data = cached_contacts
     else:
         # Search for contacts
-        search_query = f"'{company.name}' (CTO OR 'Engineering Manager' OR 'Tech Lead' OR 'Hiring Manager') linkedin contacts"
+        search_query = (
+            f"'{company.name}' (CTO OR 'Engineering Manager' OR 'Tech Lead' OR 'Hiring Manager') linkedin contacts"
+        )
         results = browser.search_google(search_query, num_results=3)
 
         scraped_text = ""
@@ -613,9 +544,7 @@ def run_stage_4_contact_research(
             try:
                 response = llm.generate_json(prompt, ContactListResponse)
                 contacts_data = [c.model_dump() for c in response.contacts]  # type: ignore
-                cache.set(
-                    cache_key, contacts_data, config.pipeline.cache_lifetime_seconds
-                )
+                cache.set(cache_key, contacts_data, config.pipeline.cache_lifetime_seconds)
             except Exception as e:
                 p_log.error(f"Failed to identify contacts using LLM: {e}")
         else:
@@ -624,9 +553,7 @@ def run_stage_4_contact_research(
     # Fallback to generating a mock placeholder contact if web search yielded nothing
     # to avoid blocking the pipeline due to lack of public APIs, but log a warning.
     if not contacts_data:
-        p_log.warning(
-            "No contacts discovered. Generating placeholder contact for pipeline continuity."
-        )
+        p_log.warning("No contacts discovered. Generating placeholder contact for pipeline continuity.")
         contacts_data = [
             {
                 "name": "Hiring Manager",
@@ -652,9 +579,7 @@ def run_stage_4_contact_research(
     for c_data in contacts_data:
         # Check if contact exists
         contact = (
-            session.query(Contact)
-            .filter(Contact.company_id == company.id, Contact.name == c_data["name"])
-            .first()
+            session.query(Contact).filter(Contact.company_id == company.id, Contact.name == c_data["name"]).first()
         )
 
         if not contact:
@@ -707,9 +632,7 @@ def run_stage_4_contact_research(
         )
     )
     session.commit()
-    p_log.info(
-        f"Selected contact {best_contact.name} ({best_contact.role}).", status="SUCCESS"
-    )
+    p_log.info(f"Selected contact {best_contact.name} ({best_contact.role}).", status="SUCCESS")
     return True
 
 
@@ -729,9 +652,7 @@ def run_stage_5_email_discovery(
     assert contact is not None
     company = app.job.company
 
-    p_log = PipelineLogger(
-        logger, run_id, "Stage 5: Professional Email Discovery", company.name
-    )
+    p_log = PipelineLogger(logger, run_id, "Stage 5: Professional Email Discovery", company.name)
     p_log.info(f"Finding email for {contact.name}...")
 
     if contact.email:
@@ -779,25 +700,19 @@ def run_stage_5_email_discovery(
             response = llm.generate_json(prompt, EmailDiscoveryResponse)
             email_address = response.email  # type: ignore
             if email_address:
-                cache.set(
-                    cache_key, email_address, config.pipeline.cache_lifetime_seconds
-                )
+                cache.set(cache_key, email_address, config.pipeline.cache_lifetime_seconds)
         except Exception as e:
             p_log.error(f"LLM failed to deduce email for {contact.name}: {e}")
 
     # Fallback to pattern guessing if nothing found, to ensure the pipeline is runnable
     # in an environment with no paid contact scraping endpoints.
     if not email_address and company.domain:
-        p_log.warning(
-            "No email address found online. Guessing standard format first.last@domain."
-        )
+        p_log.warning("No email address found online. Guessing standard format first.last@domain.")
         clean_name = contact.name.lower().replace(" ", ".")
         email_address = f"{clean_name}@{company.domain}"
 
     if not email_address:
-        p_log.error(
-            f"No professional email discovered for {contact.name}.", status="NO_EMAIL"
-        )
+        p_log.error(f"No professional email discovered for {contact.name}.", status="NO_EMAIL")
         app.state = "No Professional Email"
         session.add(
             History(
@@ -863,9 +778,7 @@ def run_stage_6_opportunity_scoring(
     )
 
     try:
-        response: OpportunityScoreResponse = llm.generate_json(
-            prompt, OpportunityScoreResponse
-        )  # type: ignore
+        response: OpportunityScoreResponse = llm.generate_json(prompt, OpportunityScoreResponse)  # type: ignore
         # Compute weighted average
         w = config.scoring.weights
         total_score = (
@@ -882,14 +795,10 @@ def run_stage_6_opportunity_scoring(
         app.score_breakdown = response.model_dump()
         session.commit()
 
-        p_log.info(
-            f"Weighted Score: {app.score:.2f} (Threshold: {config.scoring.thresholds.minimum_score})"
-        )
+        p_log.info(f"Weighted Score: {app.score:.2f} (Threshold: {config.scoring.thresholds.minimum_score})")
 
         if app.score < config.scoring.thresholds.minimum_score:
-            p_log.warning(
-                f"Score {app.score:.2f} is below minimum threshold.", status="LOW_SCORE"
-            )
+            p_log.warning(f"Score {app.score:.2f} is below minimum threshold.", status="LOW_SCORE")
             app.state = "Salary Too Low"  # Terminal state corresponding to failed validation/scoring
             session.add(
                 History(
@@ -953,9 +862,7 @@ def run_stage_7_resume_tailoring(
 
     base_resume_path = config.pipeline.base_resume_path
     if not os.path.exists(base_resume_path):
-        p_log.error(
-            f"Base resume not found at {base_resume_path}. Please place it there to resume."
-        )
+        p_log.error(f"Base resume not found at {base_resume_path}. Please place it there to resume.")
         app.state = "Failed"
         session.add(
             History(
@@ -978,11 +885,7 @@ def run_stage_7_resume_tailoring(
         session.commit()
         return False
 
-    tech_stack = (
-        ", ".join(company.research_data.get("tech_stack", []))
-        if company.research_data
-        else ""
-    )
+    tech_stack = ", ".join(company.research_data.get("tech_stack", [])) if company.research_data else ""
     prompt = config.prompts.resume_tailoring.format(
         role_name=job.title,
         company_name=company.name,
@@ -997,7 +900,7 @@ def run_stage_7_resume_tailoring(
         os.makedirs(config.pipeline.generated_resumes_dir, exist_ok=True)
 
         # Save tailored .typ file
-        timestamp = datetime.utcnow().strftime("%Y%m%d_%H%M%S")
+        timestamp = datetime.now(UTC).strftime("%Y%m%d_%H%M%S")
         safe_comp = company.name.replace(" ", "_").lower()
         safe_role = job.title.replace(" ", "_").lower()
 
@@ -1011,9 +914,7 @@ def run_stage_7_resume_tailoring(
         p_log.info(f"Saved tailored Typst file: {typ_filepath}")
 
         # Try to compile to PDF if typst is available
-        pdf_filepath = os.path.join(
-            config.pipeline.generated_resumes_dir, f"{file_prefix}.pdf"
-        )
+        pdf_filepath = os.path.join(config.pipeline.generated_resumes_dir, f"{file_prefix}.pdf")
         has_pdf = False
         try:
             # Run 'typst compile <typ_filepath> <pdf_filepath>'
@@ -1027,13 +928,9 @@ def run_stage_7_resume_tailoring(
                 p_log.info(f"Compiled resume to PDF: {pdf_filepath}")
                 has_pdf = True
             else:
-                p_log.warning(
-                    f"Typst compilation returned non-zero code. Error: {result.stderr}"
-                )
+                p_log.warning(f"Typst compilation returned non-zero code. Error: {result.stderr}")
         except Exception as e:
-            p_log.warning(
-                f"Typst compiler not found or failed to execute: {e}. Attaching raw .typ file instead."
-            )
+            p_log.warning(f"Typst compiler not found or failed to execute: {e}. Attaching raw .typ file instead.")
 
         final_attachment_path = pdf_filepath if has_pdf else typ_filepath
 
@@ -1108,11 +1005,7 @@ def run_stage_8_email_generation(
         .order_by(ResumeVersion.id.desc())
         .first()
     )
-    tailored_skills = (
-        ", ".join(rv.keywords_added)
-        if rv and rv.keywords_added
-        else "software development"
-    )
+    tailored_skills = ", ".join(rv.keywords_added) if rv and rv.keywords_added else "software development"
 
     research = company.research_data or {}
     prompt = config.prompts.email_generation.format(
@@ -1185,12 +1078,7 @@ def run_stage_9_validation(
     p_log.info("Validating tailored outputs...")
 
     # Load email and resume versions
-    email = (
-        session.query(Email)
-        .filter(Email.application_id == app.id)
-        .order_by(Email.id.desc())
-        .first()
-    )
+    email = session.query(Email).filter(Email.application_id == app.id).order_by(Email.id.desc()).first()
     rv = (
         session.query(ResumeVersion)
         .filter(ResumeVersion.application_id == app.id)
@@ -1243,9 +1131,7 @@ def run_stage_9_validation(
             p_log.info("Validation passed successfully.", status="SUCCESS")
             return True
         else:
-            p_log.error(
-                f"Validation failed: {response.errors}", status="VALIDATION_FAILED"
-            )
+            p_log.error(f"Validation failed: {response.errors}", status="VALIDATION_FAILED")
             app.state = "Validation Failed"
             session.add(
                 History(
@@ -1266,9 +1152,7 @@ def run_stage_9_validation(
         return False
 
 
-def run_stage_10_gmail_draft_creation(
-    session: Session, gmail: GmailProvider, app: Application, run_id: str
-) -> bool:
+def run_stage_10_gmail_draft_creation(session: Session, gmail: GmailProvider, app: Application, run_id: str) -> bool:
     """
     Stage 10: Gmail Draft Creation
     Uses Gmail OAuth connection to create the draft with the tailored resume attachment.
@@ -1277,17 +1161,10 @@ def run_stage_10_gmail_draft_creation(
     contact = app.contact
     assert contact is not None
 
-    p_log = PipelineLogger(
-        logger, run_id, "Stage 10: Gmail Draft Creation", company.name
-    )
+    p_log = PipelineLogger(logger, run_id, "Stage 10: Gmail Draft Creation", company.name)
     p_log.info(f"Creating Gmail Draft for {contact.email}...")
 
-    email = (
-        session.query(Email)
-        .filter(Email.application_id == app.id)
-        .order_by(Email.id.desc())
-        .first()
-    )
+    email = session.query(Email).filter(Email.application_id == app.id).order_by(Email.id.desc()).first()
     if not email:
         p_log.error("Email content missing in DB.")
         app.state = "Draft Failed"
@@ -1337,17 +1214,13 @@ def run_stage_10_gmail_draft_creation(
         return False
 
 
-def run_stage_11_database_finalization(
-    session: Session, app: Application, run_id: str
-) -> bool:
+def run_stage_11_database_finalization(session: Session, app: Application, run_id: str) -> bool:
     """
     Stage 11: Database Finalization
     Validates that database state for this application is clean.
     """
     company = app.job.company
-    p_log = PipelineLogger(
-        logger, run_id, "Stage 11: Database Finalization", company.name
-    )
+    p_log = PipelineLogger(logger, run_id, "Stage 11: Database Finalization", company.name)
     p_log.info("Finalizing pipeline entries...")
 
     app.current_stage = 12

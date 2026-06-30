@@ -31,9 +31,7 @@ class BaseLLMProvider(ABC):
         pass
 
     @abstractmethod
-    def generate_json(
-        self, prompt: str, schema: type[BaseModel], system_prompt: str | None = None
-    ) -> BaseModel:
+    def generate_json(self, prompt: str, schema: type[BaseModel], system_prompt: str | None = None) -> BaseModel:
         """
         Sends a request to the LLM and parses the response into the specified Pydantic schema.
         """
