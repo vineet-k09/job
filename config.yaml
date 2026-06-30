@@ -1,0 +1,116 @@
+# Recruiting Platform Configuration
+
+# Job Search Preferences
+job_preferences:
+  roles:
+    - "Software Engineer"
+    - "Software Developer"
+    - "Backend Engineer"
+    - "Backend Developer"
+    - "Python Developer"
+    - "Full Stack Engineer"
+    - "AI Engineer"
+    - "Entry Level"
+    - "Graduate"
+    - "SDE-1"
+  geographies:
+    - "India"
+    - "Remote"
+  remote_only: false
+  salary_range:
+    min_lpa: 9.0
+    max_lpa: 21.0
+  company_size:
+    min_employees: 100
+    max_employees: 1000
+  experience_years_max: 1.0
+
+# Exclusions
+exclusions:
+  companies:
+    - "VOIS"
+    - "Vodafone"
+  keywords:
+    - "Unpaid"
+    - "Staffing Agency"
+    - "Recruitment Agency"
+    - "Contract"
+
+# Pipeline & Email Settings
+pipeline:
+  daily_draft_limit: 10
+  research_depth: "detailed"
+  cache_lifetime_seconds: 86400
+  retry_limits: 3
+  base_resume_path: "resumes/resume_vineet_kushwaha.typ"
+  generated_resumes_dir: "resumes/generated"
+  db_path: "data/platform.db"
+
+# LLM Configuration
+llm:
+  provider: "local_agy"  # Options: local_agy, openai, anthropic, gemini
+  model: "default"
+  api_key: ""
+  api_url: "http://localhost:8000/v1"  # Default local AGY endpoint or similar local API
+  temperature: 0.2
+  max_tokens: 1000
+
+# Gmail API Configuration
+gmail:
+  credentials_file: "credentials.json"
+  token_file: "token.json"
+  scopes:
+    - "https://www.googleapis.com/auth/gmail.compose"
+
+# Opportunity Scoring Weights (Sum should ideally be 1.0 or self-consistent)
+scoring:
+  weights:
+    role_match: 0.3
+    tech_stack: 0.3
+    salary: 0.1
+    company_quality: 0.1
+    growth: 0.1
+    confidence: 0.1
+  thresholds:
+    minimum_score: 0.65
+
+# Prompt Customizations
+prompts:
+  company_research: |
+    Analyze the company metadata and web scrape data for: {company_name}.
+    Extract the following details:
+    1. Business model & Product description
+    2. Recent funding or launches
+    3. Tech stack (languages, frameworks)
+    4. Engineering culture & blog topics
+    5. Key engineering/hiring leadership contacts.
+    Format your response in structured markdown or JSON.
+
+  resume_tailoring: |
+    Given the job description for {role_name} at {company_name} and the base resume text:
+    Base Resume Content:
+    {base_resume_text}
+
+    Create a tailored version of the resume. Follow these guidelines:
+    - Reorder sections to highlight relevant experience first.
+    - Emphasize skills and bullet points that match the job requirements (e.g. {tech_stack}).
+    - Improve wording and add relevant ATS keywords matching the job.
+    - DO NOT fabricate projects, experience, or achievements. Ensure all information is truthful.
+    - Output reasoning and the modifications list.
+
+  email_generation: |
+    Generate a highly personalized cold outreach email to {contact_name} ({contact_role}) at {company_name} for the position of {role_name}.
+    Use the following research insights:
+    - Product: {product_description}
+    - Tech Stack: {tech_stack}
+    - Engineering culture/launches: {recent_launches}
+    
+    My Tailored Skills for this position:
+    {tailored_skills}
+
+    Guidelines:
+    - Write a short, punchy subject line.
+    - Write a concise, respectful, non-spammy email body.
+    - Reference specific aspects of their product or tech stack to show genuine interest.
+    - Explain how my experience aligns perfectly with their role without inventing qualifications.
+    - Do not use a generic template. Ensure it feels human and targeted.
