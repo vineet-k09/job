@@ -4,6 +4,7 @@ from src.providers.llm.base import BaseLLMProvider
 from src.providers.llm.gemini import GeminiProvider
 from src.providers.llm.local_agy import LocalAGYProvider
 from src.providers.llm.openai import OpenAIProvider
+from src.providers.llm.agy_cli import AGYCLIProvider
 
 
 def get_llm_provider(config: LLMConfig) -> BaseLLMProvider:
@@ -14,6 +15,14 @@ def get_llm_provider(config: LLMConfig) -> BaseLLMProvider:
 
     if provider_name == "local_agy":
         return LocalAGYProvider(
+            api_key=config.api_key,
+            model=config.model,
+            api_url=config.api_url,
+            temperature=config.temperature,
+            max_tokens=config.max_tokens,
+        )
+    elif provider_name == "agy_cli":
+        return AGYCLIProvider(
             api_key=config.api_key,
             model=config.model,
             api_url=config.api_url,
@@ -51,6 +60,7 @@ def get_llm_provider(config: LLMConfig) -> BaseLLMProvider:
 __all__ = [
     "BaseLLMProvider",
     "LocalAGYProvider",
+    "AGYCLIProvider",
     "OpenAIProvider",
     "AnthropicProvider",
     "GeminiProvider",

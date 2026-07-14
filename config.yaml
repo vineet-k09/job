@@ -30,6 +30,11 @@ exclusions:
   companies:
     - "VOIS"
     - "Vodafone"
+    - "InVideo"
+    - "Yellow.ai"
+    - "Hasura"
+    - "Hevo Data"
+    - "GeekyAnts"
   keywords:
     - "Unpaid"
     - "Staffing Agency"
@@ -38,7 +43,7 @@ exclusions:
 
 # Pipeline & Email Settings
 pipeline:
-  daily_draft_limit: 10
+  daily_draft_limit: 20
   research_depth: "detailed"
   cache_lifetime_seconds: 86400
   retry_limits: 3
@@ -48,7 +53,7 @@ pipeline:
 
 # LLM Configuration
 llm:
-  provider: "local_agy"  # Options: local_agy, openai, anthropic, gemini
+  provider: "agy_cli"  # Options: agy_cli, local_agy, openai, anthropic, gemini
   model: "default"
   api_key: ""
   api_url: "http://localhost:8000/v1"  # Default local AGY endpoint or similar local API
@@ -114,5 +119,5 @@ prompts:
     - Write a concise, respectful, non-spammy email body.
     - Reference specific aspects of their product or tech stack to show genuine interest.
     - Explain how my experience aligns perfectly with their role based ONLY on the skills explicitly listed in my Tailored Skills. DO NOT invent or claim experience with any other languages, libraries, or infrastructures (e.g., do not claim experience with Rust, Elixir, WebRTC, FFmpeg, or GPU clusters unless they are in my Tailored Skills list).
-    - Sign off the email using the name "Vineet Kushwaha". DO NOT use placeholders like "[Your Name]", "[Candidate Name]", or "[My Name]".
+    - Sign off the email using the name "Vineet Kushwaha". Under the name "Vineet Kushwaha", put "<a href='https://linkedin.com/vineet-k09'>linkedin.com/vineet-k09</a> | <a href='https://github.com/vineet-k09'>github.com/vineet-k09</a>" as a link. DO NOT use placeholders like "[Your Name]", "[Candidate Name]", or "[My Name]".
     - Ensure there are no placeholders of any kind in the final email.

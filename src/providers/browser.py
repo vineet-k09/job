@@ -122,11 +122,14 @@ class BrowserProvider:
                 href = title_elem.get("href", "")
 
                 # Clean DuckDuckGo redirect URLs if necessary
-                if href.startswith("/l/?"):
+                if "/l/?" in href:
                     parsed_href = urllib.parse.urlparse(href)
                     query_params = urllib.parse.parse_qs(parsed_href.query)
                     if "uddg" in query_params:
                         href = query_params["uddg"][0]
+
+                if href.startswith("//"):
+                    href = "https:" + href
 
                 snippet = link.get_text().strip()
                 results.append({"title": title, "url": href, "snippet": snippet})

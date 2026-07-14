@@ -126,7 +126,7 @@ def run_stage_0_company_discovery(
     # Check cache first using a key representing this run's job prefs
     cache = DBCache(session)
     cache_key = (
-        f"company_discovery_{config.job_preferences.geographies[0]}_{config.job_preferences.company_size.min_employees}"
+        f"company_discovery_{config.job_preferences.geographies[0]}_{config.job_preferences.company_size.min_employees}_20"
     )
     cached_data = cache.get(cache_key)
 
@@ -138,7 +138,7 @@ def run_stage_0_company_discovery(
     else:
         # LLM generated + Web search verification
         prompt = (
-            f"Generate a list of 5 technology companies operating in {config.job_preferences.geographies} "
+            f"Generate a list of 20 technology companies operating in {config.job_preferences.geographies} "
             f"that typically have a company size between {config.job_preferences.company_size.min_employees} "
             f"and {config.job_preferences.company_size.max_employees} employees. "
             f"Exclude the following companies: {config.exclusions.companies}. "
@@ -159,19 +159,26 @@ def run_stage_0_company_discovery(
 
     # Persist companies in database
     db_companies = []
+    seen_names = set()
     for c_data in discovered_companies_data:
+        name = c_data["name"]
+        if name in seen_names:
+            continue
+        seen_names.add(name)
+
         # Avoid duplicate companies
-        existing = session.query(Company).filter(Company.name == c_data["name"]).first()
+        existing = session.query(Company).filter(Company.name == name).first()
         if existing:
             db_companies.append(existing)
         else:
             new_company = Company(
-                name=c_data["name"],
+                name=name,
                 domain=c_data.get("domain"),
                 employee_count=c_data.get("employee_count"),
                 industry=c_data.get("industry"),
             )
             session.add(new_company)
+            session.flush()  # Prevent UNIQUE constraint fails from un-flushed duplicate names
             db_companies.append(new_company)
 
     session.commit()
@@ -195,6 +202,7 @@ def run_stage_1_job_discovery(
     p_log.info(f"Searching jobs for {len(companies)} companies...")
 
     all_jobs = []
+    seen_urls = set()
     for company in companies:
         p_log.company = company.name
 
@@ -241,21 +249,37 @@ def run_stage_1_job_discovery(
                 continue
 
         for j_data in jobs_data:
+            # Normalize URL: empty/whitespace-only becomes None
+            url = j_data.get("url")
+            if url:
+                url = url.strip()
+                if not url:
+                    url = None
+            else:
+                url = None
+
+            if url:
+                if url in seen_urls:
+                    continue
+                seen_urls.add(url)
+
             # Check unique URL to prevent duplicate Job entries
             existing_job = None
-            if j_data.get("url"):
-                existing_job = session.query(Job).filter(Job.url == j_data["url"]).first()
+            if url:
+                existing_job = session.query(Job).filter(Job.url == url).first()
+
             if not existing_job:
                 new_job = Job(
                     company_id=company.id,
                     title=j_data["title"],
-                    url=j_data.get("url"),
+                    url=url,
                     location=j_data.get("location"),
                     salary=j_data.get("salary"),
                     experience_years_required=j_data.get("experience_years"),
                     description=j_data.get("description"),
                 )
                 session.add(new_job)
+                session.flush()  # Populate job.id and make it queryable within the transaction
                 all_jobs.append(new_job)
             else:
                 all_jobs.append(existing_job)
@@ -896,17 +920,19 @@ def run_stage_7_resume_tailoring(
     try:
         response: ResumeTailorResponse = llm.generate_json(prompt, ResumeTailorResponse)  # type: ignore
 
-        # Ensure directories exist
+        # Ensure base generated directory exists
         os.makedirs(config.pipeline.generated_resumes_dir, exist_ok=True)
 
-        # Save tailored .typ file
+        # Create a unique folder for this tailored resume version
         timestamp = datetime.now(UTC).strftime("%Y%m%d_%H%M%S")
         safe_comp = company.name.replace(" ", "_").lower()
         safe_role = job.title.replace(" ", "_").lower()
+        folder_name = f"resume_{safe_comp}_{safe_role}_{timestamp}"
+        resume_dir = os.path.join(config.pipeline.generated_resumes_dir, folder_name)
+        os.makedirs(resume_dir, exist_ok=True)
 
-        file_prefix = f"resume_{safe_comp}_{safe_role}_{timestamp}"
-        typ_filename = f"{file_prefix}.typ"
-        typ_filepath = os.path.join(config.pipeline.generated_resumes_dir, typ_filename)
+        # Save tailored .typ file
+        typ_filepath = os.path.join(resume_dir, "resume_vineet_kushwaha.typ")
 
         with open(typ_filepath, "w", encoding="utf-8") as f:
             f.write(response.tailored_typst_content)
@@ -914,7 +940,7 @@ def run_stage_7_resume_tailoring(
         p_log.info(f"Saved tailored Typst file: {typ_filepath}")
 
         # Try to compile to PDF if typst is available
-        pdf_filepath = os.path.join(config.pipeline.generated_resumes_dir, f"{file_prefix}.pdf")
+        pdf_filepath = os.path.join(resume_dir, "resume_vineet_kushwaha.pdf")
         has_pdf = False
         try:
             # Run 'typst compile <typ_filepath> <pdf_filepath>'
@@ -1023,10 +1049,20 @@ def run_stage_8_email_generation(
         response: EmailGenResponse = llm.generate_json(prompt, EmailGenResponse)  # type: ignore
 
         # Save to database
+        body_html = response.body_html
+        
+        # Ensure signature contains links under "Vineet Kushwaha"
+        signature_links = '<br><a href="https://linkedin.com/vineet-k09">linkedin.com/vineet-k09</a> | <a href="https://github.com/vineet-k09">github.com/vineet-k09</a>'
+        if "linkedin.com/vineet-k09" not in body_html and "github.com/vineet-k09" not in body_html:
+            if "Vineet Kushwaha" in body_html:
+                body_html = body_html.replace("Vineet Kushwaha", f"Vineet Kushwaha{signature_links}", 1)
+            else:
+                body_html += f"<p>{signature_links}</p>"
+
         email = Email(
             application_id=app.id,
             subject=response.subject,
-            body=response.body_html,
+            body=body_html,
             status="generated",
         )
         session.add(email)

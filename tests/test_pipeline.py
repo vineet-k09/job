@@ -187,5 +187,7 @@ def test_pipeline_integration(tmp_path):
     assert email_entry is not None
     assert email_entry.gmail_draft_id == "draft_abc123"
     assert email_entry.status == "draft_created"
+    assert "linkedin.com/vineet-k09" in email_entry.body
+    assert "github.com/vineet-k09" in email_entry.body
 
     session.close()
