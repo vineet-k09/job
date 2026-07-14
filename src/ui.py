@@ -464,6 +464,8 @@ class RecruitingApp(App[Any]):
                 details_str += "**Outreach Email:**\n"
                 details_str += f"- Subject: {email_info.subject}\n"
                 details_str += f"- Gmail Draft ID: {email_info.gmail_draft_id or 'N/A'}\n"
+                if email_info.scheduled_at:
+                    details_str += f"- Scheduled Send: {email_info.scheduled_at.strftime('%Y-%m-%d %H:%M:%S')} UTC\n"
                 details_str += f"- HTML Body Preview:\n\n{email_info.body[:2000]}\n\n"
 
             if history_info:

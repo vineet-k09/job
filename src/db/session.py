@@ -35,6 +35,21 @@ def init_db(db_path: str = "data/platform.db") -> None:
     engine = get_db_engine(db_path)
     Base.metadata.create_all(engine)
 
+    # Simple migration: ensure scheduled_at column exists in emails table
+    from sqlalchemy import inspect, text
+    try:
+        inspector = inspect(engine)
+        if "emails" in inspector.get_table_names():
+            columns = [col["name"] for col in inspector.get_columns("emails")]
+            if "scheduled_at" not in columns:
+                with engine.begin() as conn:
+                    conn.execute(text("ALTER TABLE emails ADD COLUMN scheduled_at DATETIME"))
+    except Exception as e:
+        import logging
+        logging.getLogger("recruiting-platform.db.session").warning(
+            f"Failed to auto-migrate scheduled_at column: {e}"
+        )
+
 
 def get_session_factory(db_path: str = "data/platform.db") -> sessionmaker[Session]:
     """Returns a sessionmaker factory configured for the SQLite DB."""

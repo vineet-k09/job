@@ -5,7 +5,7 @@ from rich.console import Console
 from rich.panel import Panel
 from rich.table import Table
 
-from src.db.models import Application, Run
+from src.db.models import Application, Run, Email
 from src.db.session import get_session_factory
 from src.db.session import init_db as db_init
 from src.pipeline.runner import PipelineRunner
@@ -41,6 +41,32 @@ def run_pipeline(
         console.print(f"[bold green]Pipeline completed successfully for {run_id}![/bold green]")
     except Exception as e:
         console.print(f"[bold red]Pipeline failed:[/bold red] {e}")
+        raise typer.Exit(code=1) from e
+
+
+@app.command("targeted")
+def run_targeted_outreach(
+    target: str = typer.Argument(..., help="Company name, company email, domain, or related identifier"),
+    config: str = typer.Option("config.yaml", help="Path to config.yaml"),
+    jd: str | None = typer.Option(None, help="Pasted Job Description text"),
+) -> None:
+    """
+    Run targeted search, research, and outreach for a specific company or contact.
+    """
+    if not jd:
+        import os
+        jd = os.environ.get("JD") or os.environ.get("jd")
+        # Clean up empty strings or whitespace-only inputs
+        if jd and not jd.strip():
+            jd = None
+
+    console.print(f"[bold green]Starting Targeted Outreach for: '{target}'...[/bold green]")
+    runner = get_runner(config)
+    try:
+        run_id = runner.run_targeted(target, jd=jd, max_stage=12)
+        console.print(f"[bold green]Targeted outreach completed successfully for {run_id}![/bold green]")
+    except Exception as e:
+        console.print(f"[bold red]Targeted outreach failed:[/bold red] {e}")
         raise typer.Exit(code=1) from e
 
 
@@ -147,6 +173,80 @@ def retry_failed_applications(
     except Exception as e:
         console.print(f"[bold red]Retry process failed:[/bold red] {e}")
         raise typer.Exit(code=1) from e
+
+
+@app.command("send-scheduled")
+def send_scheduled_emails(
+    config: str = typer.Option("config.yaml", help="Path to config.yaml"),
+) -> None:
+    """
+    Send all drafts that are scheduled and whose scheduled time has passed.
+    """
+    console.print("[bold green]Checking for scheduled emails to send...[/bold green]")
+    runner = get_runner(config)
+    session_factory = get_session_factory(runner.config.pipeline.db_path)
+    session = session_factory()
+
+    try:
+        from datetime import UTC, datetime
+        now = datetime.now(UTC).replace(tzinfo=None)
+
+        # Get emails that are drafts, have a scheduled_at timestamp, and scheduled_at <= now
+        scheduled_emails = (
+            session.query(Email)
+            .filter(
+                Email.status == "draft_created",
+                Email.gmail_draft_id.isnot(None),
+                Email.scheduled_at.isnot(None),
+                Email.scheduled_at <= now,
+            )
+            .all()
+        )
+
+        if not scheduled_emails:
+            console.print("No scheduled drafts are ready to be sent at this time.")
+            return
+
+        console.print(f"Found {len(scheduled_emails)} draft(s) ready to send.")
+
+        # Authenticate Gmail
+        if not runner.gmail.authenticate(interactive=True):
+            console.print("[bold red]Error: Gmail API authentication failed. Cannot send emails.[/bold red]")
+            raise typer.Exit(code=1)
+
+        sent_count = 0
+        for email in scheduled_emails:
+            app_record = email.application
+            company_name = app_record.job.company.name
+            contact_email = app_record.contact.email if app_record.contact else "unknown"
+
+            console.print(f"Sending draft {email.gmail_draft_id} to {contact_email} (Company: {company_name})...")
+            try:
+                runner.gmail.send_draft(email.gmail_draft_id)
+                email.status = "sent"
+                app_record.state = "Completed"
+
+                # Also record history
+                from src.db.models import History
+                session.add(
+                    History(
+                        application_id=app_record.id,
+                        stage=app_record.current_stage,
+                        state="Completed",
+                        run_id=app_record.run_id,
+                        notes=f"Scheduled draft (ID: {email.gmail_draft_id}) successfully sent to {contact_email}.",
+                    )
+                )
+                session.commit()
+                sent_count += 1
+                console.print(f"[bold green]Successfully sent email to {contact_email}![/bold green]")
+            except Exception as e:
+                console.print(f"[bold red]Failed to send draft {email.gmail_draft_id}: {e}[/bold red]")
+
+        console.print(f"[bold green]Completed. Sent {sent_count} email(s).[/bold green]")
+
+    finally:
+        session.close()
 
 
 @app.command("auth")

@@ -42,6 +42,8 @@ class MockLLMProvider:
                 ]
             )
         elif "JobListResponse" in str(schema):
+            if "nojobscorp" in prompt.lower():
+                return JobListResponse(jobs=[])
             return JobListResponse(
                 jobs=[
                     {
@@ -53,6 +55,28 @@ class MockLLMProvider:
                         "description": "Python developer role.",
                     }
                 ]
+            )
+        elif "TargetedParseResponse" in str(schema):
+            if "nojobscorp" in prompt.lower():
+                return schema(
+                    company_name="NoJobsCorp",
+                    domain="nojobscorp.com",
+                    contact_email=None,
+                    contact_name=None
+                )
+            return schema(
+                company_name="TargetedCorp",
+                domain="targetedcorp.com",
+                contact_email="hiring@targetedcorp.com",
+                contact_name="Hiring Manager"
+            )
+        elif "JDParseResponse" in str(schema):
+            return schema(
+                title="Pasted Software Engineer",
+                location="Remote",
+                salary="15 LPA",
+                experience_years=2.0,
+                description="This is a parsed description of the pasted job description."
             )
         elif "CompanyResearchResponse" in str(schema):
             return CompanyResearchResponse(
@@ -98,7 +122,7 @@ class MockLLMProvider:
             )
         elif "ValidationResponse" in str(schema):
             return ValidationResponse(is_valid=True, errors=[])
-
+ 
         raise ValueError(f"No mock handler for schema {schema}")
 
 
@@ -187,7 +211,139 @@ def test_pipeline_integration(tmp_path):
     assert email_entry is not None
     assert email_entry.gmail_draft_id == "draft_abc123"
     assert email_entry.status == "draft_created"
+    assert email_entry.scheduled_at is not None
     assert "linkedin.com/vineet-k09" in email_entry.body
     assert "github.com/vineet-k09" in email_entry.body
+
+    session.close()
+
+
+def test_targeted_outreach_normal(tmp_path):
+    # 1. Setup in-memory SQLite DB
+    engine = create_engine("sqlite:///:memory:")
+    Base.metadata.create_all(engine)
+    session_factory = sessionmaker(bind=engine)
+    session = session_factory()
+
+    # 2. Setup mock runner config
+    config_data = load_config("config.yaml")
+    config_data.pipeline.db_path = ":memory:"
+
+    temp_resume = tmp_path / "resume.typ"
+    temp_resume.write_text("= Vineet Kushwaha Resume")
+    config_data.pipeline.base_resume_path = str(temp_resume)
+    config_data.pipeline.generated_resumes_dir = str(tmp_path / "generated")
+
+    # 3. Create runner with injected mocks
+    runner = PipelineRunner()
+    runner.config = config_data
+    runner.SessionLocal = session_factory
+    runner.llm = MockLLMProvider()
+    runner.browser = MockBrowserProvider()
+    runner.gmail = MockGmailProvider()
+
+    # 4. Run targeted pipeline
+    runner.run_targeted("TargetedCorp")
+
+    # 5. Assert states in database
+    db_apps = session.query(Application).all()
+    assert len(db_apps) == 1
+    app = db_apps[0]
+
+    assert app.state == "Completed"
+    assert app.current_stage == 12
+    assert app.job.company.name == "TargetedCorp"
+    # Verify the provided contact from LLM parse was linked
+    assert app.contact.email == "hiring@targetedcorp.com"
+    assert app.contact.name == "Hiring Manager"
+
+    session.close()
+
+
+def test_targeted_outreach_speculative(tmp_path):
+    # 1. Setup in-memory SQLite DB
+    engine = create_engine("sqlite:///:memory:")
+    Base.metadata.create_all(engine)
+    session_factory = sessionmaker(bind=engine)
+    session = session_factory()
+
+    # 2. Setup mock runner config
+    config_data = load_config("config.yaml")
+    config_data.pipeline.db_path = ":memory:"
+    # Enable speculative outreach
+    config_data.job_preferences.allow_speculative_outreach = True
+
+    temp_resume = tmp_path / "resume.typ"
+    temp_resume.write_text("= Vineet Kushwaha Resume")
+    config_data.pipeline.base_resume_path = str(temp_resume)
+    config_data.pipeline.generated_resumes_dir = str(tmp_path / "generated")
+
+    # 3. Create runner with injected mocks
+    runner = PipelineRunner()
+    runner.config = config_data
+    runner.SessionLocal = session_factory
+    runner.llm = MockLLMProvider()
+    runner.browser = MockBrowserProvider()
+    runner.gmail = MockGmailProvider()
+
+    # 4. Run targeted pipeline for a company with no jobs (NoJobsCorp)
+    runner.run_targeted("no_jobs at nojobscorp.com")
+
+    # 5. Assert states in database
+    db_apps = session.query(Application).all()
+    assert len(db_apps) == 1
+    app = db_apps[0]
+
+    assert app.state == "Completed"
+    assert app.current_stage == 12
+    assert app.job.company.name == "NoJobsCorp"
+    # Verify speculative job details
+    assert "Speculative Application" in app.job.title
+    assert app.job.url.startswith("speculative://")
+    
+    session.close()
+
+
+def test_targeted_outreach_with_jd(tmp_path):
+    # 1. Setup in-memory SQLite DB
+    engine = create_engine("sqlite:///:memory:")
+    Base.metadata.create_all(engine)
+    session_factory = sessionmaker(bind=engine)
+    session = session_factory()
+
+    # 2. Setup mock runner config
+    config_data = load_config("config.yaml")
+    config_data.pipeline.db_path = ":memory:"
+
+    temp_resume = tmp_path / "resume.typ"
+    temp_resume.write_text("= Vineet Kushwaha Resume")
+    config_data.pipeline.base_resume_path = str(temp_resume)
+    config_data.pipeline.generated_resumes_dir = str(tmp_path / "generated")
+
+    # 3. Create runner with injected mocks
+    runner = PipelineRunner()
+    runner.config = config_data
+    runner.SessionLocal = session_factory
+    runner.llm = MockLLMProvider()
+    runner.browser = MockBrowserProvider()
+    runner.gmail = MockGmailProvider()
+
+    # 4. Run targeted pipeline with a pasted JD
+    pasted_jd = "We are hiring a Python Software Engineer to build beautiful web apps. Requires 2 years of experience."
+    runner.run_targeted("TargetedCorp", jd=pasted_jd)
+
+    # 5. Assert states in database
+    db_apps = session.query(Application).all()
+    assert len(db_apps) == 1
+    app = db_apps[0]
+
+    assert app.state == "Completed"
+    assert app.current_stage == 12
+    assert app.job.company.name == "TargetedCorp"
+    # Verify job is parsed and created from pasted JD
+    assert app.job.title == "Pasted Software Engineer"
+    assert app.job.url.startswith("pasted://")
+    assert app.job.experience_years_required == 2.0
+    assert "parsed description" in app.job.description
 
     session.close()

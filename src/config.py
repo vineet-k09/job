@@ -21,6 +21,7 @@ class JobPreferences(BaseModel):
     salary_range: SalaryRange
     company_size: CompanySize
     experience_years_max: float
+    allow_speculative_outreach: bool = False
 
 
 class Exclusions(BaseModel):

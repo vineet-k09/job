@@ -1,4 +1,16 @@
-.PHONY: install lint test run search research tailor draft retry resume ui clean format migrate help
+export TARGET := $(target)
+export JD := $(jd)
+
+.DEFAULT_GOAL := default
+
+.PHONY: default install lint test run search research tailor draft retry resume send-scheduled auth ui clean format migrate help target targeted
+
+default:
+ifneq ($(target),)
+	uv run recruiting-platform targeted "$(TARGET)"
+else
+	@$(MAKE) help
+endif
 
 help:
 	@echo "Available commands:"
@@ -14,8 +26,10 @@ help:
 	@echo "  make draft     - Run Stage 8-10 (Email Gen and Gmail Draft Creation)"
 	@echo "  make resume    - Resume any active/paused job applications"
 	@echo "  make retry     - Reset failed applications and retry them"
+	@echo "  make send-scheduled - Send drafts whose scheduled time has passed"
 	@echo "  make auth      - Authenticate Gmail API connection interactively"
 	@echo "  make ui        - Launch the Textual terminal user interface"
+	@echo "  make target    - Run targeted outreach (e.g. make target target=\"ElevenLabs\")"
 	@echo "  make clean     - Clean temporary Python files and logs"
 
 install:
@@ -55,11 +69,17 @@ resume:
 retry:
 	uv run recruiting-platform retry
 
+send-scheduled:
+	uv run recruiting-platform send-scheduled
+
 auth:
 	uv run recruiting-platform auth
 
 ui:
 	uv run recruiting-platform ui
+
+target targeted:
+	uv run recruiting-platform targeted "$(TARGET)"
 
 clean:
 	rm -rf .pytest_cache .ruff_cache .mypy_cache

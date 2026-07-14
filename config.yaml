@@ -24,6 +24,7 @@ job_preferences:
     min_employees: 100
     max_employees: 1000
   experience_years_max: 1.0
+  allow_speculative_outreach: true
 
 # Exclusions
 exclusions:

@@ -106,9 +106,11 @@ class Email(Base):
     body: Mapped[str] = mapped_column(Text)
     gmail_draft_id: Mapped[str | None] = mapped_column(String, nullable=True)
     status: Mapped[str] = mapped_column(String, default="draft_created")
+    scheduled_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
 
     application: Mapped[Application] = relationship(back_populates="emails")
+
 
 
 class ResumeVersion(Base):

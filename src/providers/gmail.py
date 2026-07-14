@@ -138,3 +138,19 @@ class GmailProvider:
         except Exception as e:
             logger.error(f"Failed to create Gmail draft: {e}")
             raise RuntimeError(f"Gmail draft creation failed: {e}") from e
+
+    def send_draft(self, draft_id: str) -> None:
+        """
+        Sends an existing Gmail draft by its draft ID.
+        """
+        if not self.service:
+            # Try to authenticate silently
+            if not self.authenticate(interactive=False):
+                raise RuntimeError("Gmail service not authenticated. Cannot send draft.")
+        try:
+            assert self.service is not None
+            self.service.users().drafts().send(userId="me", body={"id": draft_id}).execute()
+            logger.info(f"Sent draft successfully. Draft ID: {draft_id}")
+        except Exception as e:
+            logger.error(f"Failed to send Gmail draft {draft_id}: {e}")
+            raise RuntimeError(f"Gmail draft send failed: {e}") from e

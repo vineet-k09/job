@@ -3,7 +3,7 @@ from datetime import UTC, date, datetime
 from sqlalchemy.orm import Session
 
 from src.config import AppConfig, load_config
-from src.db.models import Application, Email, History, Run
+from src.db.models import Application, Email, History, Run, Company, Job, Contact
 from src.db.session import get_session_factory, init_db
 
 # Import stage functions
@@ -309,3 +309,191 @@ class PipelineRunner:
                 )
             )
             session.commit()
+
+    def run_targeted(self, target_input: str, jd: str | None = None, max_stage: int = 12) -> str:
+        """
+        Executes a targeted search, research, and outreach for a specific company or contact.
+        """
+        session = self.SessionLocal()
+        run_id = generate_run_id(session)
+
+        p_log = PipelineLogger(logger, run_id, "Targeted Outreach Start")
+        p_log.info(f"Initializing targeted outreach run: {run_id} for input: '{target_input}'")
+
+        new_run = Run(id=run_id, status="running")
+        session.add(new_run)
+        session.commit()
+
+        if max_stage >= 10:
+            import sys
+            interactive = sys.stdout.isatty()
+            p_log.info("Checking Gmail API credentials...")
+            if not self.gmail.authenticate(interactive=interactive):
+                p_log.warning("Gmail API authentication failed. Draft creation stages will be skipped/paused.")
+
+        try:
+            # 1. Parse target input using LLM
+            prompt = (
+                f"Analyze the following targeted outreach input string:\n"
+                f"'{target_input}'\n\n"
+                f"This input may contain a company name, a domain name, an email address, or a combination. "
+                f"Extract and return the cleaned canonical company name, the domain, "
+                f"the contact email (if explicitly provided), and the contact name (if deducible)."
+            )
+            
+            from pydantic import BaseModel, Field
+            class TargetedParseResponse(BaseModel):
+                company_name: str = Field(description="Canonical cleaned company name")
+                domain: str | None = Field(description="Company website domain name or null")
+                contact_email: str | None = Field(description="Direct contact email address or null")
+                contact_name: str | None = Field(description="Deducible contact name or null")
+
+            parsed_target: TargetedParseResponse = self.llm.generate_json(prompt, TargetedParseResponse)  # type: ignore
+            
+            p_log.info(
+                f"Parsed target: Company='{parsed_target.company_name}', Domain='{parsed_target.domain}', "
+                f"Email='{parsed_target.contact_email}', Name='{parsed_target.contact_name}'"
+            )
+
+            # 2. Get or create Company
+            company = session.query(Company).filter(Company.name.ilike(parsed_target.company_name)).first()
+            if not company and parsed_target.domain:
+                company = session.query(Company).filter(Company.domain == parsed_target.domain.lower()).first()
+            
+            if not company:
+                p_log.info(f"Company '{parsed_target.company_name}' not found in DB. Creating new company entry.")
+                company = Company(
+                    name=parsed_target.company_name,
+                    domain=parsed_target.domain.lower() if parsed_target.domain else None,
+                )
+                session.add(company)
+                session.flush()
+
+            # Temporarily clear exclusions for this targeted company name so it isn't filtered out
+            original_exclusions = list(self.config.exclusions.companies)
+            self.config.exclusions.companies = [c for c in original_exclusions if c.lower() not in company.name.lower()]
+
+            # 3. Discover jobs specifically for this company (Stage 1 logic) or use pasted JD
+            if jd:
+                p_log.info("Pasted Job Description provided. Parsing Job details using LLM...")
+                import hashlib
+                from pydantic import BaseModel, Field
+                class JDParseResponse(BaseModel):
+                    title: str = Field(description="Title of the job role, e.g. Software Engineer")
+                    location: str | None = Field(description="Job location details or Remote")
+                    salary: str | None = Field(description="Salary range or details")
+                    experience_years: float | None = Field(description="Required experience years if mentioned")
+                    description: str = Field(description="Summarized description of key requirements and role responsibilities")
+
+                jd_prompt = (
+                    f"Analyze the following pasted job description for a role at {company.name}:\n\n"
+                    f"{jd}\n\n"
+                    f"Extract the Job Title, Location, Salary details, Required Experience years (float, e.g. 2.5), "
+                    f"and a summary of key requirements and responsibilities."
+                )
+                parsed_jd: JDParseResponse = self.llm.generate_json(jd_prompt, JDParseResponse)  # type: ignore
+                
+                jd_hash = hashlib.md5(jd.encode('utf-8')).hexdigest()[:8]
+                pasted_url = f"pasted://{company.name.lower().replace(' ', '_')}_{jd_hash}"
+                
+                existing_job = session.query(Job).filter(Job.url == pasted_url).first()
+                if not existing_job:
+                    p_log.info(f"Creating new Job entry from pasted JD: '{parsed_jd.title}'")
+                    new_job = Job(
+                        company_id=company.id,
+                        title=parsed_jd.title,
+                        url=pasted_url,
+                        location=parsed_jd.location or (self.config.job_preferences.geographies[0] if self.config.job_preferences.geographies else "Remote"),
+                        salary=parsed_jd.salary,
+                        experience_years_required=parsed_jd.experience_years,
+                        description=parsed_jd.description,
+                    )
+                    session.add(new_job)
+                    session.flush()
+                    jobs = [new_job]
+                else:
+                    p_log.info("Job from pasted JD already exists in database.")
+                    jobs = [existing_job]
+            else:
+                # We can use run_stage_1_job_discovery but we only pass this one company to it
+                from src.pipeline.stages import run_stage_1_job_discovery
+                jobs = run_stage_1_job_discovery(session, self.config, self.llm, self.browser, [company], run_id)
+
+                # 4. If no jobs found, fallback to creating a speculative job (targeted runs always support this)
+                if not jobs:
+                    preferred_role = self.config.job_preferences.roles[0] if self.config.job_preferences.roles else "Software Engineer"
+                    speculative_job_title = f"{preferred_role} (Targeted Outreach)"
+                    p_log.info(f"No jobs found. Creating speculative job: '{speculative_job_title}' for {company.name}")
+                    
+                    spec_url = f"speculative://{company.name.lower().replace(' ', '_')}"
+                    existing_job = session.query(Job).filter(Job.url == spec_url).first()
+                    if not existing_job:
+                        new_job = Job(
+                            company_id=company.id,
+                            title=speculative_job_title,
+                            url=spec_url,
+                            location=self.config.job_preferences.geographies[0] if self.config.job_preferences.geographies else "Remote",
+                            description=f"Targeted outreach software engineering application matching company's tech stack and domain."
+                        )
+                        session.add(new_job)
+                        session.flush()
+                        jobs = [new_job]
+                    else:
+                        jobs = [existing_job]
+
+            # Restore exclusions
+            self.config.exclusions.companies = original_exclusions
+
+            # 5. Initialize application & filtering (Stage 2 logic)
+            from src.pipeline.stages import run_stage_2_filtering
+            active_apps = run_stage_2_filtering(session, self.config, jobs, run_id)
+
+            # 6. If contact email was provided in the input, associate it with the active applications
+            if parsed_target.contact_email:
+                contact_record = session.query(Contact).filter(Contact.email == parsed_target.contact_email.lower()).first()
+                if not contact_record:
+                    c_name = parsed_target.contact_name or parsed_target.contact_email.split('@')[0].title()
+                    p_log.info(f"Creating new Contact for email: {parsed_target.contact_email}")
+                    contact_record = Contact(
+                        company_id=company.id,
+                        name=c_name,
+                        role="Decision Maker",
+                        email=parsed_target.contact_email.lower(),
+                    )
+                    session.add(contact_record)
+                    session.flush()
+                
+                for app in active_apps:
+                    app.contact_id = contact_record.id
+                    p_log.info(f"Linking contact {contact_record.name} ({contact_record.email}) to Application #{app.id}")
+                    session.commit()
+
+            # 7. Process these specific applications
+            max_drafts = self.config.pipeline.daily_draft_limit
+            for app in active_apps:
+                current_drafts = self.get_todays_draft_count(session)
+                if current_drafts >= max_drafts and app.current_stage == 10:
+                    p_log.warning(
+                        f"Daily draft limit of {max_drafts} reached. "
+                        f"Skipping further draft creation today. Application #{app.id} paused.",
+                        status="PAUSED",
+                    )
+                    break
+
+                self._process_application(session, app, run_id, max_stage)
+
+            new_run.status = "completed"
+            new_run.completed_at = datetime.now(UTC).replace(tzinfo=None)
+            session.commit()
+            p_log.info("Targeted pipeline run execution finished.", status="COMPLETED")
+
+        except Exception as e:
+            new_run.status = "failed"
+            new_run.completed_at = datetime.now(UTC).replace(tzinfo=None)
+            session.commit()
+            p_log.error(f"Targeted pipeline execution crashed: {e}", status="CRASHED")
+            raise e
+        finally:
+            session.close()
+
+        return run_id

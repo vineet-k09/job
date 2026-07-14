@@ -22,6 +22,7 @@ from src.providers.gmail import GmailProvider
 from src.providers.llm import BaseLLMProvider
 from src.utils.caching import DBCache
 from src.utils.logging import PipelineLogger
+from src.utils.timezone import calculate_scheduled_time, guess_timezone
 
 logger = logging.getLogger("recruiting-platform.pipeline.stages")
 
@@ -212,9 +213,21 @@ def run_stage_1_job_discovery(
         cached_jobs = cache.get(cache_key)
 
         jobs_data = []
-        if cached_jobs:
+        if cached_jobs is not None:
             p_log.info(f"Found cached job listings for {company.name}")
             jobs_data = cached_jobs
+            if not jobs_data and config.job_preferences.allow_speculative_outreach:
+                preferred_role = config.job_preferences.roles[0] if config.job_preferences.roles else "Software Engineer"
+                speculative_job_title = f"{preferred_role} (Speculative Application)"
+                p_log.info(f"Upgrading cached empty job list to speculative job: '{speculative_job_title}'")
+                jobs_data = [{
+                    "title": speculative_job_title,
+                    "url": f"speculative://{company.name.lower().replace(' ', '_')}",
+                    "location": config.job_preferences.geographies[0] if config.job_preferences.geographies else "Remote",
+                    "salary": None,
+                    "experience_years": config.job_preferences.experience_years_max,
+                    "description": f"Speculative outreach for a {preferred_role} position matching the company's tech stack and domain."
+                }]
         else:
             # Query DuckDuckGo to find Careers page and open roles
             search_query = f"'{company.name}' software engineer careers jobs"
@@ -240,13 +253,29 @@ def run_stage_1_job_discovery(
                 try:
                     response = llm.generate_json(prompt, JobListResponse)
                     jobs_data = [j.model_dump() for j in response.jobs]  # type: ignore
-                    cache.set(cache_key, jobs_data, config.pipeline.cache_lifetime_seconds)
                 except Exception as e:
                     p_log.error(f"Failed to parse jobs list from LLM for {company.name}: {e}")
-                    continue
             else:
                 p_log.warning(f"No scrapable text found for {company.name}")
-                continue
+
+            if not jobs_data and config.job_preferences.allow_speculative_outreach:
+                preferred_role = config.job_preferences.roles[0] if config.job_preferences.roles else "Software Engineer"
+                speculative_job_title = f"{preferred_role} (Speculative Application)"
+                p_log.info(f"No active job listings found. Creating speculative job: '{speculative_job_title}' for {company.name}")
+                jobs_data = [{
+                    "title": speculative_job_title,
+                    "url": f"speculative://{company.name.lower().replace(' ', '_')}",
+                    "location": config.job_preferences.geographies[0] if config.job_preferences.geographies else "Remote",
+                    "salary": None,
+                    "experience_years": config.job_preferences.experience_years_max,
+                    "description": f"Speculative outreach for a {preferred_role} position matching the company's tech stack and domain."
+                }]
+
+            # Cache the result
+            cache.set(cache_key, jobs_data, config.pipeline.cache_lifetime_seconds)
+
+        if not jobs_data:
+            continue
 
         for j_data in jobs_data:
             # Normalize URL: empty/whitespace-only becomes None
@@ -499,6 +528,20 @@ def run_stage_4_contact_research(
     company = app.job.company
     p_log = PipelineLogger(logger, run_id, "Stage 4: Contact Research", company.name)
     p_log.info("Starting contact research...")
+
+    # If contact is already set, skip this stage
+    if app.contact_id is not None:
+        contact = session.query(Contact).filter(Contact.id == app.contact_id).first()
+        if contact:
+            p_log.info(f"Application already has contact associated: {contact.name}. Skipping contact research.")
+            app.current_stage = 5
+            app.state = "Professional Email Discovery"
+            if contact.email:
+                p_log.info(f"Contact email already known: {contact.email}. Bypassing Stage 5 as well.")
+                app.current_stage = 6
+                app.state = "Opportunity Scoring"
+            session.commit()
+            return True
 
     # Check if this company already has a completed application with a contact
     # Rule: "If a company only has one engineering contact available, consider the company itself contacted."
@@ -798,7 +841,11 @@ def run_stage_6_opportunity_scoring(
         f"3. salary: Matching LPA preferences {config.job_preferences.salary_range.min_lpa} - {config.job_preferences.salary_range.max_lpa}.\n"
         f"4. company_quality: Reputation, engineering culture, stability.\n"
         f"5. growth: Industry sector potential, career acceleration.\n"
-        f"6. confidence: Reliability of the job and company data found."
+        f"6. confidence: Reliability of the job and company data found.\n\n"
+        f"Note: If this is a 'Speculative Application' (indicated in the title/description with no active public job listing), "
+        f"evaluate and score 'role_match' and 'confidence' based on the company's tech stack suitability, engineering team size/growth, "
+        f"and the relevance of their business domain to the candidate's preferred roles, rather than requiring an active public job listing. "
+        f"Set the confidence score based on the completeness and quality of the company's research data."
     )
 
     try:
@@ -1219,6 +1266,13 @@ def run_stage_10_gmail_draft_creation(session: Session, gmail: GmailProvider, ap
         email.gmail_draft_id = draft_id
         email.status = "draft_created"
 
+        # Guess timezone and calculate scheduled time for 8:45 AM
+        tz_name = guess_timezone(app.job.location, company.domain)
+        scheduled_time = calculate_scheduled_time(tz_name)
+        email.scheduled_at = scheduled_time
+        scheduled_local_str = scheduled_time.strftime("%Y-%m-%d %H:%M:%S UTC")
+        p_log.info(f"Guessed timezone: {tz_name}. Scheduled draft delivery at local 8:45 AM ({scheduled_local_str}).")
+
         app.current_stage = 11
         app.state = "Database Finalization"
         session.add(
@@ -1227,7 +1281,7 @@ def run_stage_10_gmail_draft_creation(session: Session, gmail: GmailProvider, ap
                 stage=11,
                 state="Database Finalization",
                 run_id=run_id,
-                notes=f"Created Gmail Draft successfully (ID: {draft_id}).",
+                notes=f"Created Gmail Draft successfully (ID: {draft_id}). Scheduled for 8:45 AM local ({tz_name}) -> {scheduled_local_str}.",
             )
         )
         session.commit()
