@@ -35,9 +35,24 @@ data/
 logs/
 token.json
 credentials.json
+client_secret*.json
 resumes/generated/
 .pytest_cache/
 .ruff_cache/
 .mypy_cache/
 .idea/
 .vscode/
+
+# Security & Config
+.env
+.env.*
+*.env
+
+# SQLite Databases & Backups
+*.db
+*.sqlite
+*.sqlite3
+*.bak
+
+# Logs
+*.log

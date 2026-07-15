@@ -3,7 +3,7 @@ export JD := $(jd)
 
 .DEFAULT_GOAL := default
 
-.PHONY: default install lint test run search research tailor draft retry resume send-scheduled auth ui clean format migrate help target targeted
+.PHONY: default install lint test run search research tailor draft retry resume send-scheduled auth ui clean format migrate help target targeted status
 
 default:
 ifneq ($(target),)
@@ -30,6 +30,7 @@ help:
 	@echo "  make auth      - Authenticate Gmail API connection interactively"
 	@echo "  make ui        - Launch the Textual terminal user interface"
 	@echo "  make target    - Run targeted outreach (e.g. make target target=\"ElevenLabs\")"
+	@echo "  make status    - Check status of systemd service, timer, and recent logs"
 	@echo "  make clean     - Clean temporary Python files and logs"
 
 install:
@@ -80,6 +81,16 @@ ui:
 
 target targeted:
 	uv run recruiting-platform targeted "$(TARGET)"
+
+status:
+	@echo "=== systemd Service Status ==="
+	@systemctl --user status careerpilot.service --no-pager || true
+	@echo ""
+	@echo "=== systemd Timer Status ==="
+	@systemctl --user status careerpilot.timer --no-pager || true
+	@echo ""
+	@echo "=== Recent Application Logs ==="
+	@if [ -f logs/platform.log ]; then tail -n 25 logs/platform.log; else echo "No local log file found."; fi
 
 clean:
 	rm -rf .pytest_cache .ruff_cache .mypy_cache

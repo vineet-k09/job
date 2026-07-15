@@ -163,8 +163,8 @@ def calculate_scheduled_time(timezone_name: str, base_time: datetime.datetime | 
     # Set target to 8:45 AM on the same local day
     target_time = local_time.replace(hour=8, minute=45, second=0, microsecond=0)
 
-    # If 8:45 AM has already passed or is exactly now, schedule for tomorrow
-    if target_time <= local_time:
+    # If 8:45 AM is less than 5 hours in the future (or has already passed), schedule for tomorrow
+    if target_time < local_time + datetime.timedelta(hours=5):
         target_time += datetime.timedelta(days=1)
 
     # Convert back to UTC and strip tzinfo to match the database's naive datetime representation

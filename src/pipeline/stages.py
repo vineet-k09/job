@@ -739,12 +739,16 @@ def run_stage_5_email_discovery(
         p_log.info("Retrieved email from cache.")
         email_address = cached_email
     else:
-        # Search query for email pattern
+        # Search query for the specific contact
         search_query = f"'{contact.name}' email '{company.domain or company.name}'"
         results = browser.search_google(search_query, num_results=2)
 
+        # Search query for overall company email format / pattern (e.g. Hunter.io patterns)
+        pattern_query = f"\"{company.domain or company.name}\" email format OR \"email pattern\""
+        pattern_results = browser.search_google(pattern_query, num_results=2)
+
         scraped_text = ""
-        for r in results:
+        for r in results + pattern_results:
             try:
                 html = browser.fetch_page(r["url"], use_playwright=False)
                 scraped_text += f"\n--- {r['title']} ({r['url']}) ---\n"
@@ -774,9 +778,30 @@ def run_stage_5_email_discovery(
     # Fallback to pattern guessing if nothing found, to ensure the pipeline is runnable
     # in an environment with no paid contact scraping endpoints.
     if not email_address and company.domain:
-        p_log.warning("No email address found online. Guessing standard format first.last@domain.")
-        clean_name = contact.name.lower().replace(" ", ".")
-        email_address = f"{clean_name}@{company.domain}"
+        name_lower = contact.name.lower().strip()
+        is_placeholder = (
+            name_lower in [
+                "hiring manager",
+                "recruiter",
+                "talent acquisition",
+                "hr",
+                "hr manager",
+                "engineering manager",
+                "engineering lead",
+                "head of engineering",
+                "cto",
+                "recruiting team",
+                "talent team",
+            ]
+            or len(name_lower.split()) == 1
+        )
+        if is_placeholder:
+            p_log.warning("Contact name appears to be a placeholder. Guessing group email careers@domain.")
+            email_address = f"careers@{company.domain}"
+        else:
+            p_log.warning("No email address found online. Guessing standard format first.last@domain.")
+            clean_name = contact.name.lower().replace(" ", ".")
+            email_address = f"{clean_name}@{company.domain}"
 
     if not email_address:
         p_log.error(f"No professional email discovered for {contact.name}.", status="NO_EMAIL")
@@ -1256,21 +1281,26 @@ def run_stage_10_gmail_draft_creation(session: Session, gmail: GmailProvider, ap
 
     assert contact.email is not None
     try:
-        draft_id = gmail.create_draft(
-            to_email=contact.email,
-            subject=email.subject,
-            body_html=email.body,
-            resume_path=app.tailored_resume_path,
-        )
-
-        email.gmail_draft_id = draft_id
-        email.status = "draft_created"
-
         # Guess timezone and calculate scheduled time for 8:45 AM
         tz_name = guess_timezone(app.job.location, company.domain)
         scheduled_time = calculate_scheduled_time(tz_name)
         email.scheduled_at = scheduled_time
         scheduled_local_str = scheduled_time.strftime("%Y-%m-%d %H:%M:%S UTC")
+
+        # Format ISO timestamp in UTC for the Apps Script scheduler to parse
+        from datetime import UTC
+        scheduled_iso = scheduled_time.replace(tzinfo=UTC).isoformat()
+        body_with_metadata = email.body + f"\n\n<!-- schedule_send: {scheduled_iso} -->"
+
+        draft_id = gmail.create_draft(
+            to_email=contact.email,
+            subject=email.subject,
+            body_html=body_with_metadata,
+            resume_path=app.tailored_resume_path,
+        )
+
+        email.gmail_draft_id = draft_id
+        email.status = "draft_created"
         p_log.info(f"Guessed timezone: {tz_name}. Scheduled draft delivery at local 8:45 AM ({scheduled_local_str}).")
 
         app.current_stage = 11
