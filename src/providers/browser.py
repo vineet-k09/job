@@ -120,7 +120,23 @@ class BrowserProvider:
         self._save_domain_stats()
 
     def fetch_page_http(self, url: str) -> str:
-        """Fetches page content using standard HTTP requests."""
+        """Fetches page content using curl_cffi with Chrome 120 TLS impersonation, falling back to httpx."""
+        try:
+            from curl_cffi import requests as curl_requests
+
+            response = curl_requests.get(
+                url,
+                headers=HEADERS,
+                impersonate="chrome120",
+                timeout=15,
+                verify=False,
+                allow_redirects=True,
+            )
+            if response.status_code < 400:
+                return response.text
+        except Exception as ce:
+            logger.debug(f"curl_cffi fetch failed for {url}: {ce}")
+
         try:
             with httpx.Client(headers=HEADERS, follow_redirects=True, timeout=15.0, verify=False) as client:
                 response = client.get(url)

@@ -21,6 +21,7 @@ from src.providers.browser import BrowserProvider
 from src.providers.gmail import GmailProvider
 from src.providers.llm import BaseLLMProvider
 from src.utils.caching import DBCache
+from src.utils.email_verifier import generate_email_permutations, verify_email
 from src.utils.logging import PipelineLogger
 
 logger = logging.getLogger("recruiting-platform.pipeline.stages")
@@ -766,37 +767,26 @@ def run_stage_5_email_discovery(
         except Exception as e:
             p_log.error(f"LLM failed to deduce email for {contact.name}: {e}")
 
-    # Fallback to pattern guessing if nothing found, to ensure the pipeline is runnable
-    # in an environment with no paid contact scraping endpoints.
-    if not email_address:
-        domain = company.domain or f"{company.name.lower().replace(' ', '')}.com"
-        name_lower = contact.name.lower().strip()
-        is_placeholder = (
-            name_lower in [
-                "hiring manager",
-                "recruiter",
-                "talent acquisition",
-                "hr",
-                "hr manager",
-                "engineering manager",
-                "engineering lead",
-                "head of engineering",
-                "cto",
-                "recruiting team",
-                "talent team",
-            ]
-            or len(name_lower.split()) == 1
-        )
-        if is_placeholder:
-            p_log.warning(f"Contact name appears to be a placeholder. Guessing group email careers@{domain}.")
-            email_address = f"careers@{domain}"
-        else:
-            p_log.warning(f"No email address found online. Guessing standard format first.last@{domain}.")
-            clean_name = contact.name.lower().replace(" ", ".")
-            email_address = f"{clean_name}@{domain}"
+    domain = company.domain or f"{company.name.lower().replace(' ', '')}.com"
+
+    # Verify candidate email or test generated permutations against domain MX records
+    candidate_emails = []
+    if email_address:
+        candidate_emails.append(email_address)
+    candidate_emails.extend(generate_email_permutations(contact.name, domain))
+
+    verified_email = None
+    for cand in candidate_emails:
+        is_valid, msg = verify_email(cand)
+        if is_valid:
+            verified_email = cand
+            p_log.info(f"Verified email '{cand}' via MX lookup and syntax check.")
+            break
+
+    email_address = verified_email
 
     if not email_address:
-        p_log.error(f"No professional email discovered for {contact.name}.", status="NO_EMAIL")
+        p_log.error(f"No professional email with active MX records discovered for {contact.name}.", status="NO_EMAIL")
         app.state = "No Professional Email"
         session.add(
             History(
@@ -804,7 +794,7 @@ def run_stage_5_email_discovery(
                 stage=5,
                 state="No Professional Email",
                 run_id=run_id,
-                notes=f"Failed to discover email for {contact.name}.",
+                notes=f"Failed to discover/verify email with active MX records for {contact.name}.",
             )
         )
         session.commit()
