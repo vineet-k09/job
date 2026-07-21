@@ -180,14 +180,6 @@ class PipelineRunner:
         then executes the pipeline runner to retry them.
         """
         session = self.SessionLocal()
-        run_id = generate_run_id(session)
-        p_log = PipelineLogger(logger, run_id, "Pipeline Retry")
-        p_log.info("Resetting failed applications for retry...")
-
-        new_run = Run(id=run_id, status="running")
-        session.add(new_run)
-        session.commit()
-
         failed_apps = (
             session.query(Application)
             .filter(Application.state.in_(["Failed", "Research Failed", "Draft Failed", "Validation Failed"]))
@@ -195,9 +187,13 @@ class PipelineRunner:
         )
 
         if not failed_apps:
-            p_log.info("No failed applications found to retry.")
+            logger.info("No failed applications found to retry.")
             session.close()
             return self.run(resume_only=True)
+
+        run_id = generate_run_id(session)
+        p_log = PipelineLogger(logger, run_id, "Pipeline Retry")
+        p_log.info("Resetting failed applications for retry...")
 
         for app in failed_apps:
             old_state = app.state
@@ -226,8 +222,6 @@ class PipelineRunner:
             )
             p_log.info(f"Reset Application #{app.id} state to '{app.state}' for retry.")
 
-        new_run.status = "completed"
-        new_run.completed_at = datetime.now(UTC).replace(tzinfo=None)
         session.commit()
         session.close()
 

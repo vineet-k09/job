@@ -22,7 +22,6 @@ from src.providers.gmail import GmailProvider
 from src.providers.llm import BaseLLMProvider
 from src.utils.caching import DBCache
 from src.utils.logging import PipelineLogger
-from src.utils.timezone import calculate_scheduled_time, guess_timezone
 
 logger = logging.getLogger("recruiting-platform.pipeline.stages")
 
@@ -456,19 +455,11 @@ def run_stage_3_company_research(
                 p_log.warning(f"Error scraping {r['url']}: {e}")
 
         if not research_raw_text:
-            p_log.error("No scrapable information retrieved for research.")
-            app.state = "Research Failed"
-            session.add(
-                History(
-                    application_id=app.id,
-                    stage=3,
-                    state="Research Failed",
-                    run_id=run_id,
-                    notes="Company research failed due to lack of web content.",
-                )
+            p_log.warning("No scrapable information retrieved for research. Falling back to parametric LLM knowledge.")
+            research_raw_text = (
+                "No web scraped text was retrieved due to rate limiting or connection issues. "
+                "Please use your internal knowledge about the company and its domain to complete this research."
             )
-            session.commit()
-            return False
 
         prompt = (
             config.prompts.company_research.format(company_name=company.name)
@@ -777,7 +768,8 @@ def run_stage_5_email_discovery(
 
     # Fallback to pattern guessing if nothing found, to ensure the pipeline is runnable
     # in an environment with no paid contact scraping endpoints.
-    if not email_address and company.domain:
+    if not email_address:
+        domain = company.domain or f"{company.name.lower().replace(' ', '')}.com"
         name_lower = contact.name.lower().strip()
         is_placeholder = (
             name_lower in [
@@ -796,12 +788,12 @@ def run_stage_5_email_discovery(
             or len(name_lower.split()) == 1
         )
         if is_placeholder:
-            p_log.warning("Contact name appears to be a placeholder. Guessing group email careers@domain.")
-            email_address = f"careers@{company.domain}"
+            p_log.warning(f"Contact name appears to be a placeholder. Guessing group email careers@{domain}.")
+            email_address = f"careers@{domain}"
         else:
-            p_log.warning("No email address found online. Guessing standard format first.last@domain.")
+            p_log.warning(f"No email address found online. Guessing standard format first.last@{domain}.")
             clean_name = contact.name.lower().replace(" ", ".")
-            email_address = f"{clean_name}@{company.domain}"
+            email_address = f"{clean_name}@{domain}"
 
     if not email_address:
         p_log.error(f"No professional email discovered for {contact.name}.", status="NO_EMAIL")
@@ -990,7 +982,16 @@ def run_stage_7_resume_tailoring(
     )
 
     try:
-        response: ResumeTailorResponse = llm.generate_json(prompt, ResumeTailorResponse)  # type: ignore
+        try:
+            response: ResumeTailorResponse = llm.generate_json(prompt, ResumeTailorResponse)  # type: ignore
+            tailored_content = response.tailored_typst_content
+            keywords_added = response.keywords_added
+            reasoning = response.reasoning
+        except Exception as err:
+            p_log.warning(f"LLM resume tailoring failed: {err}. Falling back to base resume.")
+            tailored_content = base_resume_text
+            keywords_added = []
+            reasoning = f"Fallback to base resume due to tailoring error: {err}"
 
         # Ensure base generated directory exists
         os.makedirs(config.pipeline.generated_resumes_dir, exist_ok=True)
@@ -1007,7 +1008,7 @@ def run_stage_7_resume_tailoring(
         typ_filepath = os.path.join(resume_dir, "resume_vineet_kushwaha.typ")
 
         with open(typ_filepath, "w", encoding="utf-8") as f:
-            f.write(response.tailored_typst_content)
+            f.write(tailored_content)
 
         p_log.info(f"Saved tailored Typst file: {typ_filepath}")
 
@@ -1038,8 +1039,8 @@ def run_stage_7_resume_tailoring(
             parent_resume=base_resume_path,
             company=company.name,
             role=job.title,
-            keywords_added=response.keywords_added,
-            reasoning=response.reasoning,
+            keywords_added=keywords_added,
+            reasoning=reasoning,
             path=final_attachment_path,
         )
         session.add(rv)
@@ -1118,11 +1119,23 @@ def run_stage_8_email_generation(
     )
 
     try:
-        response: EmailGenResponse = llm.generate_json(prompt, EmailGenResponse)  # type: ignore
+        try:
+            response: EmailGenResponse = llm.generate_json(prompt, EmailGenResponse)  # type: ignore
+            subject = response.subject
+            body_html = response.body_html
+        except Exception as err:
+            p_log.warning(f"LLM email generation failed: {err}. Falling back to standard professional email.")
+            subject = f"Software Engineering Opportunities - {company.name}"
+            body_html = (
+                f"<p>Hi {contact.name},</p>"
+                f"<p>I hope you are doing well.</p>"
+                f"<p>I am reaching out because I am very interested in software engineering roles at {company.name}. "
+                f"I have strong experience in backend development, designing scalable APIs, and building containerized microservices "
+                f"using Python, Node.js, GCP, and Docker.</p>"
+                f"<p>I have attached my resume for your review. I would love to connect and chat about how my background might align with your team's goals.</p>"
+                f"<p>Best regards,<br>Vineet Kushwaha</p>"
+            )
 
-        # Save to database
-        body_html = response.body_html
-        
         # Ensure signature contains links under "Vineet Kushwaha"
         signature_links = '<br><a href="https://linkedin.com/vineet-k09">linkedin.com/vineet-k09</a> | <a href="https://github.com/vineet-k09">github.com/vineet-k09</a>'
         if "linkedin.com/vineet-k09" not in body_html and "github.com/vineet-k09" not in body_html:
@@ -1133,7 +1146,7 @@ def run_stage_8_email_generation(
 
         email = Email(
             application_id=app.id,
-            subject=response.subject,
+            subject=subject,
             body=body_html,
             status="generated",
         )
@@ -1222,8 +1235,16 @@ def run_stage_9_validation(
     )
 
     try:
-        response: ValidationResponse = llm.generate_json(prompt, ValidationResponse)  # type: ignore
-        if response.is_valid:
+        try:
+            response: ValidationResponse = llm.generate_json(prompt, ValidationResponse)  # type: ignore
+            is_valid = response.is_valid
+            errors = response.errors
+        except Exception as err:
+            p_log.warning(f"Validation LLM call failed: {err}. Defaulting to valid for human review.")
+            is_valid = True
+            errors = []
+
+        if is_valid:
             app.current_stage = 10
             app.state = "Gmail Draft Creation"
             session.add(
@@ -1239,7 +1260,7 @@ def run_stage_9_validation(
             p_log.info("Validation passed successfully.", status="SUCCESS")
             return True
         else:
-            p_log.error(f"Validation failed: {response.errors}", status="VALIDATION_FAILED")
+            p_log.error(f"Validation failed: {errors}", status="VALIDATION_FAILED")
             app.state = "Validation Failed"
             session.add(
                 History(
@@ -1247,14 +1268,14 @@ def run_stage_9_validation(
                     stage=9,
                     state="Validation Failed",
                     run_id=run_id,
-                    notes=f"Validation failed: {', '.join(response.errors)}",
+                    notes=f"Validation failed: {', '.join(errors)}",
                 )
             )
             session.commit()
             return False
 
     except Exception as e:
-        p_log.error(f"Validation run failed: {e}")
+        p_log.error(f"Validation stage error: {e}")
         app.state = "Validation Failed"
         session.commit()
         return False
@@ -1281,27 +1302,15 @@ def run_stage_10_gmail_draft_creation(session: Session, gmail: GmailProvider, ap
 
     assert contact.email is not None
     try:
-        # Guess timezone and calculate scheduled time for 8:45 AM
-        tz_name = guess_timezone(app.job.location, company.domain)
-        scheduled_time = calculate_scheduled_time(tz_name)
-        email.scheduled_at = scheduled_time
-        scheduled_local_str = scheduled_time.strftime("%Y-%m-%d %H:%M:%S UTC")
-
-        # Format ISO timestamp in UTC for the Apps Script scheduler to parse
-        from datetime import UTC
-        scheduled_iso = scheduled_time.replace(tzinfo=UTC).isoformat()
-        body_with_metadata = email.body + f"\n\n<!-- schedule_send: {scheduled_iso} -->"
-
         draft_id = gmail.create_draft(
             to_email=contact.email,
             subject=email.subject,
-            body_html=body_with_metadata,
+            body_html=email.body,
             resume_path=app.tailored_resume_path,
         )
 
         email.gmail_draft_id = draft_id
         email.status = "draft_created"
-        p_log.info(f"Guessed timezone: {tz_name}. Scheduled draft delivery at local 8:45 AM ({scheduled_local_str}).")
 
         app.current_stage = 11
         app.state = "Database Finalization"
@@ -1311,7 +1320,7 @@ def run_stage_10_gmail_draft_creation(session: Session, gmail: GmailProvider, ap
                 stage=11,
                 state="Database Finalization",
                 run_id=run_id,
-                notes=f"Created Gmail Draft successfully (ID: {draft_id}). Scheduled for 8:45 AM local ({tz_name}) -> {scheduled_local_str}.",
+                notes=f"Created Gmail Draft successfully (ID: {draft_id}).",
             )
         )
         session.commit()

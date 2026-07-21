@@ -53,6 +53,12 @@ class BrowserProvider:
         self.domain_successes = {}
         self.disabled_domains = set()
 
+        # Seed with known bot-blocking/scraper-hostile platforms to avoid wasting time/CPU
+        self.disabled_domains.update([
+            "linkedin.com", "zoominfo.com", "rocketreach.co", "indeed.com",
+            "tracxn.com", "stackshare.io", "glassdoor.com", "crunchbase.com"
+        ])
+
         if os.path.exists(self.stats_file):
             try:
                 with open(self.stats_file) as f:
@@ -128,22 +134,21 @@ class BrowserProvider:
         """
         Fetches page content using Playwright to render JavaScript.
         """
-        try:
-            from playwright.sync_api import sync_playwright
+        from playwright.sync_api import sync_playwright
 
-            with sync_playwright() as p:
-                browser = p.chromium.launch(headless=True)
+        with sync_playwright() as p:
+            browser = p.chromium.launch(headless=True)
+            try:
                 page = browser.new_page()
                 page.set_extra_http_headers(HEADERS)
-                response = page.goto(url, wait_until="networkidle", timeout=30000)
+                # Shorter timeout (10s) and using 'domcontentloaded' to drastically reduce resources/hangs
+                response = page.goto(url, wait_until="domcontentloaded", timeout=10000)
                 if response and response.status >= 400:
                     raise RuntimeError(f"Playwright received HTTP status {response.status}")
                 content = page.content()
-                browser.close()
                 return content
-        except Exception as e:
-            logger.warning(f"Playwright fetch failed for {url}: {e}. Falling back to HTTP.")
-            return self.fetch_page_http(url)
+            finally:
+                browser.close()
 
     def fetch_page(self, url: str, use_playwright: bool = False) -> str:
         """
@@ -162,11 +167,24 @@ class BrowserProvider:
             except Exception as e:
                 self._record_failure(domain)
                 raise e
+
+        # Known block-heavy domains where Playwright fallback is a waste of CPU/time
+        block_heavy = {"zoominfo.com", "rocketreach.co", "tracxn.com", "stackshare.io", "linkedin.com", "indeed.com", "glassdoor.com", "crunchbase.com"}
+        is_block_heavy = any(bh in domain for bh in block_heavy)
+
         try:
             res = self.fetch_page_http(url)
             self._record_success(domain)
             return res
         except Exception as e:
+            err_msg = str(e).lower()
+            status_blocked = "403" in err_msg or "429" in err_msg or "forbidden" in err_msg or "too many requests" in err_msg
+
+            if is_block_heavy or status_blocked:
+                self._record_failure(domain)
+                logger.warning(f"HTTP fetch failed for {url} ({e}). Skipping Playwright retry for block-heavy/blocked resource.")
+                raise RuntimeError(f"Failed to fetch page {url} (blocked/hostile)") from e
+
             logger.info(f"Direct HTTP fetch failed for {url} ({e}). Retrying with Playwright...")
             try:
                 res = self.fetch_page_playwright(url)

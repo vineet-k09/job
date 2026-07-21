@@ -75,7 +75,7 @@ class MockLLMProvider:
                 title="Pasted Software Engineer",
                 location="Remote",
                 salary="15 LPA",
-                experience_years=2.0,
+                experience_years=0.5,
                 description="This is a parsed description of the pasted job description."
             )
         elif "CompanyResearchResponse" in str(schema):
@@ -211,7 +211,6 @@ def test_pipeline_integration(tmp_path):
     assert email_entry is not None
     assert email_entry.gmail_draft_id == "draft_abc123"
     assert email_entry.status == "draft_created"
-    assert email_entry.scheduled_at is not None
     assert "linkedin.com/vineet-k09" in email_entry.body
     assert "github.com/vineet-k09" in email_entry.body
 
@@ -343,7 +342,7 @@ def test_targeted_outreach_with_jd(tmp_path):
     # Verify job is parsed and created from pasted JD
     assert app.job.title == "Pasted Software Engineer"
     assert app.job.url.startswith("pasted://")
-    assert app.job.experience_years_required == 2.0
+    assert app.job.experience_years_required == 0.5
     assert "parsed description" in app.job.description
 
     session.close()
