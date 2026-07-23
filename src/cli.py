@@ -5,7 +5,7 @@ from rich.console import Console
 from rich.panel import Panel
 from rich.table import Table
 
-from src.db.models import Application, Run, Email
+from src.db.models import Application, Run
 from src.db.session import get_session_factory
 from src.db.session import init_db as db_init
 from src.pipeline.runner import PipelineRunner
@@ -26,6 +26,18 @@ def get_runner(config_path: str = "config.yaml") -> PipelineRunner:
         raise typer.Exit(code=1) from e
 
 
+def auto_start_widget(config_path: str = "config.yaml") -> None:
+    """Auto-launches dark mode status widget server on port 18492 if not already running."""
+    try:
+        from src.config import load_config
+        from src.web_server import DEFAULT_WIDGET_PORT, ensure_widget_server_running
+
+        cfg = load_config(config_path)
+        ensure_widget_server_running(db_path=cfg.pipeline.db_path, port=DEFAULT_WIDGET_PORT, auto_open=True)
+    except Exception as e:
+        console.print(f"[yellow]Widget auto-start warning: {e}[/yellow]")
+
+
 @app.command("run")
 def run_pipeline(
     config: str = typer.Option("config.yaml", help="Path to config.yaml"),
@@ -34,6 +46,7 @@ def run_pipeline(
     """
     Run the entire recruiting pipeline end-to-end (discover, filter, research, tailor, draft).
     """
+    auto_start_widget(config)
     console.print("[bold green]Starting Recruiting Platform End-to-End Pipeline...[/bold green]")
     runner = get_runner(config)
     try:
@@ -55,7 +68,7 @@ def run_targeted_outreach(
     """
     if not jd:
         import os
-        jd = os.environ.get("JD") or os.environ.get("jd")
+        jd = os.environ.get("JD")
         # Clean up empty strings or whitespace-only inputs
         if jd and not jd.strip():
             jd = None
@@ -310,17 +323,61 @@ def view_status(config: str = typer.Option("config.yaml", help="Path to config.y
         session.close()
 
 
-@app.command("ui")
-def start_tui(config: str = typer.Option("config.yaml", help="Path to config.yaml")) -> None:
-    """
-    Launch the professional Textual terminal user interface.
-    """
-    console.print("[bold green]Starting Textual UI...[/bold green]")
-    # Import inside function to avoid heavy Textual load on simple CLI commands
-    from src.ui import RecruitingApp
 
-    app_tui = RecruitingApp(config_path=config)
-    app_tui.run()
+@app.command("widget")
+def start_widget(
+    config: str = typer.Option("config.yaml", help="Path to config.yaml"),
+    port: int = typer.Option(18492, help="Port to serve dark mode widget on"),
+    host: str = typer.Option("127.0.0.1", help="Host address"),
+) -> None:
+    """
+    Launch minimal dark mode job status widget web server on uncommon port (positioned top-right / bottom-right).
+    """
+    from src.config import load_config
+    from src.web_server import run_widget_server
+
+    cfg = load_config(config)
+    db_path = cfg.pipeline.db_path
+    console.print(f"[bold cyan]Starting Minimal Dark Mode Status Widget at http://{host}:{port}...[/bold cyan]")
+    run_widget_server(db_path=db_path, port=port, host=host)
+
+
+@app.command("export")
+def export_data(
+    config: str = typer.Option("config.yaml", help="Path to config.yaml"),
+    all_records: bool = typer.Option(False, "--all", help="Export all records, bypassing incremental manifest"),
+    dir: str = typer.Option("exports", help="Target export directory"),
+) -> None:
+    """
+    Incrementally export outreach data (company & email details) to JSON & CSV.
+    """
+    from src.config import load_config
+    from src.utils.exporter import export_outreach_data
+
+    cfg = load_config(config)
+    console.print("[bold cyan]Executing Incremental Outreach Data Export...[/bold cyan]")
+    res = export_outreach_data(db_path=cfg.pipeline.db_path, export_dir=dir, export_all=all_records)
+    if res.get("exported_count", 0) > 0:
+        console.print(f"[bold green]{res['message']}[/bold green]")
+        console.print(f"[dim]Latest CSV file: {res['latest_csv_path']}[/dim]")
+    else:
+        console.print(f"[bold yellow]{res['message']}[/bold yellow]")
+
+
+@app.command("clean-invalid")
+def clean_invalid(
+    config: str = typer.Option("config.yaml", help="Path to config.yaml"),
+) -> None:
+    """
+    Clean invalid email IDs and non-working application states (NEVER deletes company/job/contact/email records).
+    """
+    from src.config import load_config
+    from src.utils.cleaner import clean_invalid_emails_and_states
+
+    cfg = load_config(config)
+    console.print("[bold magenta]Cleaning invalid contact email IDs and non-working states...[/bold magenta]")
+    res = clean_invalid_emails_and_states(db_path=cfg.pipeline.db_path)
+    console.print(f"[bold green]{res['message']}[/bold green]")
 
 
 if __name__ == "__main__":

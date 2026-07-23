@@ -50,7 +50,8 @@ The project conforms to a clean, package-centric Python structure:
 │   ├── __init__.py
 │   ├── cli.py           # Typer command-line interface
 │   ├── config.py        # Pydantic configuration parser
-│   ├── ui.py            # Textual terminal dashboard
+│   ├── web_server.py    # Web server serving REST APIs & status dashboard
+│   ├── static/          # Web widget & dashboard frontend (index.html)
 │   ├── db/
 │   │   ├── __init__.py
 │   │   ├── models.py    # SQLAlchemy database models

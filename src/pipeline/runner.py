@@ -3,7 +3,7 @@ from datetime import UTC, date, datetime
 from sqlalchemy.orm import Session
 
 from src.config import AppConfig, load_config
-from src.db.models import Application, Email, History, Run, Company, Job, Contact
+from src.db.models import Application, Company, Contact, Email, History, Job, Run
 from src.db.session import get_session_factory, init_db
 
 # Import stage functions
@@ -371,6 +371,7 @@ class PipelineRunner:
             if jd:
                 p_log.info("Pasted Job Description provided. Parsing Job details using LLM...")
                 import hashlib
+
                 from pydantic import BaseModel, Field
                 class JDParseResponse(BaseModel):
                     title: str = Field(description="Title of the job role, e.g. Software Engineer")
@@ -427,7 +428,7 @@ class PipelineRunner:
                             title=speculative_job_title,
                             url=spec_url,
                             location=self.config.job_preferences.geographies[0] if self.config.job_preferences.geographies else "Remote",
-                            description=f"Targeted outreach software engineering application matching company's tech stack and domain."
+                            description="Targeted outreach software engineering application matching company's tech stack and domain."
                         )
                         session.add(new_job)
                         session.flush()

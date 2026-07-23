@@ -1,12 +1,11 @@
-import logging
-import urllib.parse
-import warnings
 import json
+import logging
 import os
+import urllib.parse
 
 import httpx
-from bs4 import BeautifulSoup
 import urllib3
+from bs4 import BeautifulSoup
 
 # Suppress InsecureRequestWarning when verifying=False is used
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
@@ -31,8 +30,8 @@ class BrowserProvider:
 
     def __init__(self) -> None:
         self.playwright_active = False
-        self.run_failures = {}
-        self.run_successes = {}
+        self.run_failures: dict[str, int] = {}
+        self.run_successes: dict[str, int] = {}
         self._load_domain_stats()
 
     def _get_domain(self, url: str) -> str:
@@ -139,9 +138,10 @@ class BrowserProvider:
 
         try:
             with httpx.Client(headers=HEADERS, follow_redirects=True, timeout=15.0, verify=False) as client:
-                response = client.get(url)
-                response.raise_for_status()
-                return response.text
+                httpx_resp = client.get(url)
+                if httpx_resp.status_code < 400:
+                    return httpx_resp.text
+                raise RuntimeError(f"HTTP fetch returned status {httpx_resp.status_code}")
         except Exception as e:
             logger.warning(f"HTTP fetch failed for {url}: {e}")
             raise RuntimeError(f"HTTP request to {url} failed: {e}") from e

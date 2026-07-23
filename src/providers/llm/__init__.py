@@ -1,10 +1,10 @@
 from src.config import LLMConfig
+from src.providers.llm.agy_cli import AGYCLIProvider
 from src.providers.llm.anthropic import AnthropicProvider
 from src.providers.llm.base import BaseLLMProvider
 from src.providers.llm.gemini import GeminiProvider
 from src.providers.llm.local_agy import LocalAGYProvider
 from src.providers.llm.openai import OpenAIProvider
-from src.providers.llm.agy_cli import AGYCLIProvider
 
 
 def get_llm_provider(config: LLMConfig) -> BaseLLMProvider:
