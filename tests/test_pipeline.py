@@ -166,7 +166,7 @@ def test_pipeline_integration(tmp_path):
     session = session_factory()
 
     # 2. Setup mock runner config
-    config_data = load_config("config.yaml")
+    config_data = load_config("config.example.yaml")
     # Set paths to temp directories to avoid writing to project root during tests
     config_data.pipeline.db_path = ":memory:"
 
@@ -225,7 +225,7 @@ def test_targeted_outreach_normal(tmp_path):
     session = session_factory()
 
     # 2. Setup mock runner config
-    config_data = load_config("config.yaml")
+    config_data = load_config("config.example.yaml")
     config_data.pipeline.db_path = ":memory:"
 
     temp_resume = tmp_path / "resume.typ"
@@ -267,7 +267,7 @@ def test_targeted_outreach_speculative(tmp_path):
     session = session_factory()
 
     # 2. Setup mock runner config
-    config_data = load_config("config.yaml")
+    config_data = load_config("config.example.yaml")
     config_data.pipeline.db_path = ":memory:"
     # Enable speculative outreach
     config_data.job_preferences.allow_speculative_outreach = True
@@ -311,7 +311,7 @@ def test_targeted_outreach_with_jd(tmp_path):
     session = session_factory()
 
     # 2. Setup mock runner config
-    config_data = load_config("config.yaml")
+    config_data = load_config("config.example.yaml")
     config_data.pipeline.db_path = ":memory:"
 
     temp_resume = tmp_path / "resume.typ"

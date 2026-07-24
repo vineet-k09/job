@@ -25,6 +25,9 @@ jobs:
       - name: Install dependencies
         run: uv sync
 
+      - name: Prepare test config
+        run: cp config.example.yaml config.yaml
+
       - name: Lint with Ruff
         run: uv run ruff check .
 
