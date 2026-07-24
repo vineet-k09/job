@@ -58,6 +58,21 @@ def clean_invalid_emails_and_states(db_path: str = "data/platform.db") -> dict[s
                 app.state = "No Professional Email"
                 updated_applications_count += 1
 
+        # 3. Purge non-working contact emails for applications marked 'No Professional Email'
+        no_email_apps = (
+            session.query(Application)
+            .filter(Application.state == "No Professional Email")
+            .all()
+        )
+        for app in no_email_apps:
+            if app.contact and app.contact.email:
+                logger.info(
+                    f"Purging non-working email '{app.contact.email}' for Contact #{app.contact.id} "
+                    f"associated with Application #{app.id} marked 'No Professional Email'."
+                )
+                app.contact.email = None
+                cleared_emails_count += 1
+
         session.commit()
 
         summary = {

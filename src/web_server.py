@@ -539,6 +539,71 @@ def get_jobs(db_path: str) -> list[dict[str, Any]]:
         return []
 
 
+def mark_email_nonexistent(db_path: str, app_id: int) -> dict[str, Any]:
+    """
+    Marks an application's email as non-existent/bounced.
+    Updates application state to 'No Professional Email', clears the contact's email address,
+    updates email status, and logs a history record.
+    """
+    if not os.path.exists(db_path):
+        return {"success": False, "error": f"Database file not found at {db_path}"}
+    try:
+        conn = sqlite3.connect(db_path)
+        cur = conn.cursor()
+
+        cur.execute("SELECT contact_id, run_id, current_stage FROM applications WHERE id = ?", (app_id,))
+        row = cur.fetchone()
+        if not row:
+            conn.close()
+            return {"success": False, "error": f"Application #{app_id} not found."}
+
+        contact_id = row[0]
+        run_id = row[1] or "UNKNOWN"
+        current_stage = row[2] or 0
+
+        # Update application state
+        cur.execute(
+            "UPDATE applications SET state = 'No Professional Email', updated_at = CURRENT_TIMESTAMP WHERE id = ?",
+            (app_id,),
+        )
+
+        cleared_contact = False
+        if contact_id:
+            cur.execute("UPDATE contacts SET email = NULL WHERE id = ?", (contact_id,))
+            cleared_contact = True
+
+        # Update associated email status if any
+        cur.execute(
+            "UPDATE emails SET status = 'email_does_not_exist' WHERE application_id = ?",
+            (app_id,),
+        )
+
+        # Ensure run_id exists in runs table before adding history record to prevent FK errors
+        cur.execute("SELECT id FROM runs WHERE id = ?", (run_id,))
+        if not cur.fetchone():
+            cur.execute("INSERT INTO runs (id, status) VALUES (?, 'completed')", (run_id,))
+
+        # Log history audit record
+        cur.execute(
+            """
+            INSERT INTO history (application_id, stage, state, run_id, timestamp, notes)
+            VALUES (?, ?, 'No Professional Email', ?, CURRENT_TIMESTAMP, 'Marked email as non-existent (bounced) via UI')
+            """,
+            (app_id, current_stage, run_id),
+        )
+
+        conn.commit()
+        conn.close()
+
+        msg = f"Marked Application #{app_id} as 'No Professional Email'"
+        if cleared_contact:
+            msg += " and cleared contact email address."
+
+        return {"success": True, "message": msg}
+    except Exception as e:
+        return {"success": False, "error": str(e)}
+
+
 def execute_pipeline_action_thread(
     config_path: str, db_path: str, action_type: str
 ) -> None:
@@ -565,7 +630,9 @@ def execute_pipeline_action_thread(
             from src.utils.cleaner import clean_invalid_emails_and_states
 
             res = clean_invalid_emails_and_states(db_path)
-            msg = f"Cleaned! Cleared {res['cleared_emails']} invalid emails & updated {res['updated_applications']} apps."
+            cleared = res.get("cleared_emails_count", res.get("cleared_emails", 0))
+            updated = res.get("updated_applications_count", res.get("updated_applications", 0))
+            msg = f"Cleaned! Cleared {cleared} invalid emails & updated {updated} apps."
         elif action_type == "export":
             from src.utils.exporter import export_outreach_data
 
@@ -746,6 +813,19 @@ class StatusWidgetRequestHandler(BaseHTTPRequestHandler):
                         "message": f"Updated Application #{app_id} to '{new_state}'",
                     }
                 )
+            except Exception as e:
+                self._send_json({"success": False, "error": str(e)}, 400)
+            return
+
+        if path == "/api/actions/mark_email_nonexistent":
+            content_length = int(self.headers.get("Content-Length", 0))
+            post_data = self.rfile.read(content_length)
+            try:
+                payload = json.loads(post_data.decode("utf-8"))
+                app_id = int(payload["id"])
+                result = mark_email_nonexistent(self.db_path, app_id)
+                status_code = 200 if result.get("success") else 400
+                self._send_json(result, status_code)
             except Exception as e:
                 self._send_json({"success": False, "error": str(e)}, 400)
             return

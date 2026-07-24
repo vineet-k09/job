@@ -146,3 +146,41 @@ def test_ensure_widget_server_running_when_already_active():
         assert res is True
         mock_open.assert_not_called()
 
+
+def test_mark_email_nonexistent(tmp_path):
+    from src.web_server import mark_email_nonexistent
+
+    db_file = str(tmp_path / "test_mark.db")
+    engine = create_engine(f"sqlite:///{db_file}")
+    Base.metadata.create_all(engine)
+
+    session_factory = get_session_factory(db_file)
+    session = session_factory()
+
+    comp = Company(id=1, name="Test Co")
+    job = Job(id=10, company_id=1, title="Dev")
+    contact = Contact(id=20, company_id=1, name="Bob", role="Recruiter", email="bounced@test.com")
+    run = Run(id="RUN-100", status="completed")
+    app = Application(id=50, run_id="RUN-100", job_id=10, contact_id=20, current_stage=8, state="Email Generation")
+    email = Email(id=1, application_id=50, subject="Hello", body="Test", status="sent")
+
+    session.add_all([comp, job, contact, run, app, email])
+    session.commit()
+    session.close()
+
+    res = mark_email_nonexistent(db_file, 50)
+    assert res["success"] is True
+
+    session = session_factory()
+    updated_app = session.query(Application).filter(Application.id == 50).first()
+    updated_contact = session.query(Contact).filter(Contact.id == 20).first()
+    updated_email = session.query(Email).filter(Email.application_id == 50).first()
+    history_count = session.query(History).filter(History.application_id == 50).count()
+
+    assert updated_app.state == "No Professional Email"
+    assert updated_contact.email is None
+    assert updated_email.status == "email_does_not_exist"
+    assert history_count == 1
+    session.close()
+
+

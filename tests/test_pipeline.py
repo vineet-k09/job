@@ -346,3 +346,41 @@ def test_targeted_outreach_with_jd(tmp_path):
     assert "parsed description" in app.job.description
 
     session.close()
+
+
+def test_retry_failed_fk_safety(tmp_path):
+    engine = create_engine("sqlite:///:memory:")
+    Base.metadata.create_all(engine)
+    session_factory = sessionmaker(bind=engine)
+    session = session_factory()
+
+    config_data = load_config("config.example.yaml")
+    config_data.pipeline.db_path = ":memory:"
+
+    temp_resume = tmp_path / "resume.typ"
+    temp_resume.write_text("= Example User Resume")
+    config_data.pipeline.base_resume_path = str(temp_resume)
+    config_data.pipeline.generated_resumes_dir = str(tmp_path / "generated")
+
+    runner = PipelineRunner()
+    runner.config = config_data
+    runner.SessionLocal = session_factory
+    runner.llm = MockLLMProvider()
+    runner.browser = MockBrowserProvider()
+    runner.gmail = MockGmailProvider()
+
+    # Run targeted to create a completed app
+    runner.run_targeted("TargetedCorp")
+
+    # Manually mark app as failed
+    app = session.query(Application).first()
+    app.state = "Draft Failed"
+    session.commit()
+
+    # Execute retry_failed - must not crash with Foreign Key IntegrityError
+    runner.retry_failed()
+
+    session.refresh(app)
+    assert app.state == "Completed"
+    session.close()
+

@@ -704,8 +704,9 @@
     <div id="tab-applications" class="tab-content">
       <div style="display: flex; flex-direction: column; gap: 12px; margin-bottom: 16px;">
         <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 12px;">
-          <div class="section-title" style="margin-bottom: 0;">
+          <div class="section-title" style="margin-bottom: 0; display: flex; align-items: center; gap: 12px;">
             <span>All Applications (<span id="appCountLabel">0</span>)</span>
+            <button id="purgeNonWorkingEmailsBtn" class="btn" style="padding: 4px 10px; font-size: 12px; background: rgba(245, 158, 11, 0.18); border-color: var(--accent-amber); color: var(--accent-amber);" title="Purge non-working emails & clean database records">🧹 Purge Non-Working Emails</button>
           </div>
           <input type="text" id="appSearchInput" class="search-input" placeholder="🔍 Search company, role, state...">
         </div>
@@ -816,9 +817,12 @@
       <!-- Application Overview Card -->
       <div class="inspector-card">
         <div class="inspector-title">Application Status</div>
-        <div style="display: flex; gap: 12px; align-items: center; flex-wrap: wrap;">
-          <span id="inspectStateBadge" class="badge badge-stage">Stage 0</span>
-          <span style="font-size: 13px; color: var(--text-muted);">Score: <strong id="inspectScore" style="color: var(--accent-amber);">N/A</strong></span>
+        <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 12px;">
+          <div style="display: flex; gap: 12px; align-items: center; flex-wrap: wrap;">
+            <span id="inspectStateBadge" class="badge badge-stage">Stage 0</span>
+            <span style="font-size: 13px; color: var(--text-muted);">Score: <strong id="inspectScore" style="color: var(--accent-amber);">N/A</strong></span>
+          </div>
+          <button id="inspectMarkNonExistentBtn" class="btn btn-amber" style="font-size: 11px; padding: 4px 10px;" title="Mark email as non-existent / bounced">📧 Mark Email Non-Existent</button>
         </div>
         <div id="inspectBreakdown" style="font-size: 12px; color: var(--text-muted); margin-top: 8px;"></div>
       </div>
@@ -1184,7 +1188,7 @@
         let badgeClass = 'badge-stage';
         if (a.state === 'Completed' || a.state.includes('Draft')) badgeClass = 'badge-completed';
         if (a.state.includes('Failed') || a.state.includes('Error')) badgeClass = 'badge-failed';
-        if (['Skipped', 'Duplicate', 'Salary Too Low', 'Excluded Company'].includes(a.state)) badgeClass = 'badge-amber';
+        if (['Skipped', 'Duplicate', 'Salary Too Low', 'Excluded Company', 'No Professional Email', 'Ghost Job'].includes(a.state)) badgeClass = 'badge-amber';
 
         return `
           <tr class="clickable-row">
@@ -1200,6 +1204,7 @@
               <div style="display: flex; gap: 4px; justify-content: center;" onclick="event.stopPropagation();">
                 <button class="btn" style="padding: 2px 6px; font-size: 11px;" onclick="updateAppState(${a.id}, 'Completed')" title="Mark Completed">✅</button>
                 <button class="btn" style="padding: 2px 6px; font-size: 11px;" onclick="updateAppState(${a.id}, 'Skipped')" title="Mark Skipped">🚫</button>
+                <button class="btn btn-amber" style="padding: 2px 6px; font-size: 11px;" onclick="markEmailNonExistent(${a.id})" title="Mark Email Non-Existent (Bounced / Doesn't Exist)">📧❌</button>
               </div>
             </td>
           </tr>
@@ -1222,7 +1227,10 @@
     }
 
     // Application Detail Inspector
+    let currentInspectedAppId = null;
+
     async function inspectApplication(appId) {
+      currentInspectedAppId = appId;
       try {
         const res = await fetch(`/api/application_details?id=${appId}`);
         if (!res.ok) return;
@@ -1313,7 +1321,38 @@
     document.getElementById('resumePipelineBtn').addEventListener('click', () => triggerAction('/api/actions/resume'));
     document.getElementById('retryFailedBtn').addEventListener('click', () => triggerAction('/api/actions/retry'));
     document.getElementById('cleanInvalidBtn').addEventListener('click', () => triggerAction('/api/actions/clean_invalid'));
+    const purgeAppBtn = document.getElementById('purgeNonWorkingEmailsBtn');
+    if (purgeAppBtn) purgeAppBtn.addEventListener('click', () => triggerAction('/api/actions/clean_invalid'));
     document.getElementById('exportDataBtn').addEventListener('click', () => triggerAction('/api/actions/export'));
+    
+    const inspectMarkBtn = document.getElementById('inspectMarkNonExistentBtn');
+    if (inspectMarkBtn) inspectMarkBtn.addEventListener('click', () => markEmailNonExistent(currentInspectedAppId));
+
+    async function markEmailNonExistent(appId) {
+      const idToMark = appId || currentInspectedAppId;
+      if (!idToMark) return;
+      if (!confirm(`Mark application #${idToMark} email as non-existent/bounced? This will set state to 'No Professional Email' and clear the contact email.`)) {
+        return;
+      }
+      try {
+        const res = await fetch('/api/actions/mark_email_nonexistent', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ id: idToMark })
+        });
+        const data = await res.json();
+        const statusMsg = document.getElementById('actionStatusMsg');
+        if (data.message) {
+          statusMsg.innerHTML = `<span style="color: var(--accent-amber);">${escapeHtml(data.message)}</span>`;
+        } else if (data.error) {
+          statusMsg.innerHTML = `<span style="color: var(--accent-red);">⚠ ${escapeHtml(data.error)}</span>`;
+        }
+        document.getElementById('inspectorDrawer').classList.remove('active');
+        fetchAllData();
+      } catch (e) {
+        console.error('Failed to mark email non-existent:', e);
+      }
+    }
 
     async function triggerAction(endpoint) {
       try {

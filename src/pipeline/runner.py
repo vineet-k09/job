@@ -193,6 +193,10 @@ class PipelineRunner:
             return self.run(resume_only=True)
 
         run_id = generate_run_id(session)
+        new_run = Run(id=run_id, status="running")
+        session.add(new_run)
+        session.flush()
+
         p_log = PipelineLogger(logger, run_id, "Pipeline Retry")
         p_log.info("Resetting failed applications for retry...")
 
