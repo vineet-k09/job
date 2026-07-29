@@ -5,6 +5,7 @@ import subprocess
 from datetime import UTC, datetime
 
 from pydantic import BaseModel, Field
+from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from src.config import AppConfig
@@ -801,20 +802,24 @@ def run_stage_5_email_discovery(
         return False
 
     # Save email and proceed safely avoiding UNIQUE constraint errors
+    clean_email = email_address.strip().lower()
     existing_contact = (
         session.query(Contact)
-        .filter(Contact.email == email_address, Contact.id != contact.id)
+        .filter(func.lower(Contact.email) == clean_email, Contact.id != contact.id)
         .first()
     )
     if existing_contact:
         p_log.info(
-            f"Email '{email_address}' is already associated with Contact #{existing_contact.id} ({existing_contact.name}). "
+            f"Email '{clean_email}' is already associated with Contact #{existing_contact.id} ({existing_contact.name}). "
             f"Linking Application #{app.id} to existing contact."
         )
+        temp_contact = contact
         app.contact_id = existing_contact.id
         app.contact = existing_contact
+        if temp_contact and not temp_contact.email and len(temp_contact.applications) <= 1:
+            session.delete(temp_contact)
     else:
-        contact.email = email_address
+        contact.email = clean_email
 
     app.current_stage = 6
     app.state = "Opportunity Scoring"

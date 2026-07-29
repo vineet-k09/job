@@ -125,6 +125,7 @@ gmail:
 | Command | Description |
 | :--- | :--- |
 | `make run` | Runs the full recruiting pipeline end-to-end and launches the web widget |
+| `make ui` | Launches the live dashboard & status widget on `http://localhost:18492` |
 | `make widget` | Launches the live dashboard & status widget on `http://localhost:18492` |
 | `make target target="Company"` | Runs targeted outreach for a specific company or role |
 | `make export` | Exports outreach contacts, emails, and company data to `exports/` |

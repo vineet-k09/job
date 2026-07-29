@@ -26,6 +26,7 @@ from src.providers.browser import BrowserProvider
 from src.providers.gmail import GmailProvider
 from src.providers.llm import get_llm_provider
 from src.utils.logging import PipelineLogger, get_logger
+from src.utils.timer_failsafe import check_and_revive_timer
 
 logger = get_logger("recruiting-platform.pipeline.runner")
 
@@ -72,6 +73,9 @@ class PipelineRunner:
             scopes=self.config.gmail.scopes,
         )
 
+        # Failsafe: Self-heals background timer if automation=true, or kills it if automation=false
+        check_and_revive_timer(self.config.pipeline.automation)
+
     def get_todays_draft_count(self, session: Session) -> int:
         """
         Count draft emails successfully created in Gmail today.
@@ -104,10 +108,10 @@ class PipelineRunner:
 
         if max_stage >= 10:
             import sys
-            interactive = sys.stdout.isatty()
+            interactive = sys.stdin.isatty() and sys.stdout.isatty()
             p_log.info("Checking Gmail API credentials...")
             if not self.gmail.authenticate(interactive=interactive):
-                p_log.warning("Gmail API authentication failed. Draft creation stages will be skipped/paused.")
+                p_log.warning("Gmail API authentication failed. Draft creation stages will be skipped/paused. Run 'python -m src.cli auth' in terminal to authorize Gmail.")
 
         try:
             terminal_states = [
@@ -332,10 +336,10 @@ class PipelineRunner:
 
         if max_stage >= 10:
             import sys
-            interactive = sys.stdout.isatty()
+            interactive = sys.stdin.isatty() and sys.stdout.isatty()
             p_log.info("Checking Gmail API credentials...")
             if not self.gmail.authenticate(interactive=interactive):
-                p_log.warning("Gmail API authentication failed. Draft creation stages will be skipped/paused.")
+                p_log.warning("Gmail API authentication failed. Draft creation stages will be skipped/paused. Run 'python -m src.cli auth' in terminal to authorize Gmail.")
 
         try:
             # 1. Parse target input using LLM

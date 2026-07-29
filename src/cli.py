@@ -42,6 +42,7 @@ def auto_start_widget(config_path: str = "config.yaml") -> None:
 def run_pipeline(
     config: str = typer.Option("config.yaml", help="Path to config.yaml"),
     limit: int | None = typer.Option(None, help="Override daily draft limit"),
+    max_stage: int = typer.Option(12, "--max-stage", "--stage", help="Maximum stage to execute (0 to 12)"),
 ) -> None:
     """
     Run the entire recruiting pipeline end-to-end (discover, filter, research, tailor, draft).
@@ -50,7 +51,7 @@ def run_pipeline(
     console.print("[bold green]Starting Recruiting Platform End-to-End Pipeline...[/bold green]")
     runner = get_runner(config)
     try:
-        run_id = runner.run(max_stage=12, limit_drafts=limit)
+        run_id = runner.run(max_stage=max_stage, limit_drafts=limit)
         console.print(f"[bold green]Pipeline completed successfully for {run_id}![/bold green]")
     except Exception as e:
         console.print(f"[bold red]Pipeline failed:[/bold red] {e}")
@@ -324,6 +325,7 @@ def view_status(config: str = typer.Option("config.yaml", help="Path to config.y
 
 
 
+@app.command("ui")
 @app.command("widget")
 def start_widget(
     config: str = typer.Option("config.yaml", help="Path to config.yaml"),
@@ -331,13 +333,16 @@ def start_widget(
     host: str = typer.Option("127.0.0.1", help="Host address"),
 ) -> None:
     """
-    Launch minimal dark mode job status widget web server on uncommon port (positioned top-right / bottom-right).
+    Launch minimal dark mode job status widget & dashboard web server on port 18492.
     """
     from src.config import load_config
-    from src.web_server import run_widget_server
+    from src.web_server import is_widget_server_running, run_widget_server
 
     cfg = load_config(config)
     db_path = cfg.pipeline.db_path
+    if is_widget_server_running(port):
+        console.print(f"[bold green]UI / Job Status Widget is already running at http://{host}:{port}[/bold green]")
+        return
     console.print(f"[bold cyan]Starting Minimal Dark Mode Status Widget at http://{host}:{port}...[/bold cyan]")
     run_widget_server(db_path=db_path, port=port, host=host)
 

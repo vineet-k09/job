@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Antigravity Recruiting Board & Status Widget</title>
+  <title>Dashboard</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
@@ -616,9 +616,9 @@
     </div>
 
     <div class="header-actions">
-      <button id="widgetModeToggle" class="btn" title="Toggle Minimal Status Widget overlay">
+      <!-- <button id="widgetModeToggle" class="btn" title="Toggle Minimal Status Widget overlay">
         <span>↘</span> Floating Widget Mode
-      </button>
+      </button> -->
       <button id="refreshBtn" class="btn" title="Refresh all data">
         🔄 Refresh
       </button>
@@ -909,15 +909,15 @@
     });
 
     // --- Widget Floating Mode Toggle ---
-    const widgetModeToggle = document.getElementById('widgetModeToggle');
+    // const widgetModeToggle = document.getElementById('widgetModeToggle');
     const floatingWidget = document.getElementById('floatingWidget');
     const expandWidgetBtn = document.getElementById('expandWidgetBtn');
     const posToggle = document.getElementById('posToggle');
 
-    widgetModeToggle.addEventListener('click', () => {
-      isWidgetMode = true;
-      floatingWidget.style.display = 'block';
-    });
+    // widgetModeToggle.addEventListener('click', () => {
+    //   isWidgetMode = true;
+    //   floatingWidget.style.display = 'block';
+    // });
 
     expandWidgetBtn.addEventListener('click', () => {
       isWidgetMode = false;

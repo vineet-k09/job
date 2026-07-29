@@ -3,7 +3,7 @@ export JD := $(jd)
 
 .DEFAULT_GOAL := default
 
-.PHONY: default install lint test run search research tailor draft retry resume send-scheduled auth widget export clean-invalid clean format migrate help target targeted status
+.PHONY: default install lint test run search research tailor draft retry resume send-scheduled auth ui widget export clean-invalid clean format migrate help target targeted status
 
 default:
 ifneq ($(target),)
@@ -20,6 +20,7 @@ help:
 	@echo "  make test          - Run tests using pytest"
 	@echo "  make migrate       - Initialize or migrate SQLite database"
 	@echo "  make run           - Run the entire recruiting pipeline end-to-end (auto-launches web widget)"
+	@echo "  make ui            - Launch recruiting web dashboard & dark mode status widget on port 18492"
 	@echo "  make widget        - Launch recruiting web dashboard & dark mode status widget on port 18492"
 	@echo "  make export        - Incrementally export outreach data (Company + Contact + Email info)"
 	@echo "  make clean-invalid - Clean non-existent emails & bad states without deleting company/job/contact/email"
@@ -54,8 +55,8 @@ migrate:
 run:
 	uv run recruiting-platform run
 
-widget:
-	uv run recruiting-platform widget --port 18492
+ui widget:
+	uv run recruiting-platform ui --port 18492
 
 export:
 	uv run recruiting-platform export

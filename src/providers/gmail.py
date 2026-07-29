@@ -67,7 +67,7 @@ class GmailProvider:
 
                 try:
                     flow = InstalledAppFlow.from_client_secrets_file(self.credentials_path, self.scopes)
-                    self.creds = flow.run_local_server(port=8080)
+                    self.creds = flow.run_local_server(port=8080, access_type="offline", prompt="consent")
                     # Save the credentials for the next run
                     with open(self.token_path, "w") as token:
                         token.write(self.creds.to_json())

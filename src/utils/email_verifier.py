@@ -79,8 +79,16 @@ def generate_email_permutations(full_name: str, domain: str) -> list[str]:
     clean_domain = domain.strip().lower()
     parts = [p.strip().lower() for p in full_name.split() if p.strip()]
 
-    if not parts:
-        return [f"careers@{clean_domain}"]
+    # If contact name is a generic placeholder, avoid producing fake persona emails like hiring.manager@domain.com
+    placeholder_terms = {"hiring", "manager", "recruiter", "engineering", "head", "unknown", "n/a"}
+    is_placeholder = bool(parts) and all(p in placeholder_terms for p in parts)
+
+    if not parts or is_placeholder:
+        return [
+            f"careers@{clean_domain}",
+            f"jobs@{clean_domain}",
+            f"hiring@{clean_domain}",
+        ]
 
     first = parts[0]
     last = parts[-1] if len(parts) > 1 else ""

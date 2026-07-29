@@ -184,3 +184,18 @@ def test_mark_email_nonexistent(tmp_path):
     session.close()
 
 
+def test_cli_ui_command():
+    from unittest.mock import patch
+
+    from typer.testing import CliRunner
+
+    from src.cli import app
+
+    runner = CliRunner()
+    with patch("src.web_server.is_widget_server_running", return_value=True):
+        result = runner.invoke(app, ["ui"])
+        assert result.exit_code == 0
+        assert "already running" in result.output
+
+
+

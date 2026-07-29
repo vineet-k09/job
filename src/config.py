@@ -37,6 +37,7 @@ class PipelineSettings(BaseModel):
     base_resume_path: str
     generated_resumes_dir: str
     db_path: str
+    automation: bool = True
 
 
 class LLMConfig(BaseModel):

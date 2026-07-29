@@ -64,6 +64,7 @@ pipeline:
   base_resume_path: "resumes/resume_example.typ"   # Path to YOUR Typst resume
   generated_resumes_dir: "resumes/generated"
   db_path: "data/platform.db"
+  automation: true   # If true, auto-heals & starts timer; if false, kills timer
 
 # ──────────────────────────────────────────────────────────
 # LLM Configuration
