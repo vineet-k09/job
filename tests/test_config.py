@@ -12,3 +12,6 @@ def test_load_config():
     assert isinstance(cfg, AppConfig)
     assert len(cfg.job_preferences.roles) > 0
     assert cfg.scoring.weights.role_match > 0
+    assert cfg.pipeline.generate_resume is False
+    assert cfg.pipeline.ai_resume_path == "/mnt/bridge/dev/personal/resume/resume_vineet_kushwaha_ai.typ"
+    assert cfg.pipeline.base_resume_path == "/mnt/bridge/dev/personal/resume/resume_vineet_kushwaha.typ"

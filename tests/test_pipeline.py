@@ -384,3 +384,50 @@ def test_retry_failed_fk_safety(tmp_path):
     assert app.state == "Completed"
     session.close()
 
+
+def test_stage_7_resume_selection_and_toggle(tmp_path):
+    from src.pipeline.stages import run_stage_7_resume_tailoring
+    from src.db.models import Company, Job, Application, ResumeVersion, Run
+
+    engine = create_engine("sqlite:///:memory:")
+    Base.metadata.create_all(engine)
+    session_factory = sessionmaker(bind=engine)
+    session = session_factory()
+
+    config_data = load_config("config.example.yaml")
+    config_data.pipeline.db_path = ":memory:"
+    config_data.pipeline.generate_resume = False
+
+    ai_resume = tmp_path / "resume_ai.typ"
+    ai_resume.write_text("= AI Resume Content")
+    dev_resume = tmp_path / "resume_dev.typ"
+    dev_resume.write_text("= Dev Resume Content")
+
+    config_data.pipeline.ai_resume_path = str(ai_resume)
+    config_data.pipeline.dev_resume_path = str(dev_resume)
+    config_data.pipeline.generated_resumes_dir = str(tmp_path / "generated")
+
+    run = Run(id="test_run")
+    session.add(run)
+    company = Company(name="TestAI", domain="testai.com")
+    session.add(company)
+    session.commit()
+
+    job_ai = Job(company_id=company.id, title="AI Engineer", url="http://test.com")
+    session.add(job_ai)
+    session.commit()
+
+    app_ai = Application(run_id="test_run", job_id=job_ai.id, current_stage=6, state="Resume Tailoring")
+    session.add(app_ai)
+    session.commit()
+
+    res = run_stage_7_resume_tailoring(session, config_data, MockLLMProvider(), app_ai, "test_run")
+    assert res is True
+    assert app_ai.current_stage == 8
+
+    rv = session.query(ResumeVersion).filter(ResumeVersion.application_id == app_ai.id).first()
+    assert rv is not None
+    assert "AI-focused" in rv.reasoning
+
+    session.close()
+

@@ -34,7 +34,10 @@ class PipelineSettings(BaseModel):
     research_depth: str
     cache_lifetime_seconds: int
     retry_limits: int
-    base_resume_path: str
+    generate_resume: bool = False
+    ai_resume_path: str = "resumes/resume_vineet_kushwaha_ai.typ"
+    dev_resume_path: str = "resumes/resume_vineet_kushwaha_dev.typ"
+    base_resume_path: str = "resumes/resume_vineet_kushwaha.typ"
     generated_resumes_dir: str
     db_path: str
     automation: bool = True

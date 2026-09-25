@@ -63,3 +63,4 @@ resumes/resume_*.typ
 *.log
 
 *exports/
+APP_GUIDE.md

@@ -61,8 +61,10 @@ pipeline:
   research_depth: "detailed"
   cache_lifetime_seconds: 86400
   retry_limits: 3
-  base_resume_path: "resumes/resume_example.typ"   # Path to YOUR Typst resume
-  generated_resumes_dir: "resumes/generated"
+  generate_resume: false   # If false, uses pre-built AI or Base resume; if true, LLM tailors a new resume
+  ai_resume_path: "/mnt/bridge/dev/personal/resume/resume_vineet_kushwaha_ai.typ"
+  base_resume_path: "/mnt/bridge/dev/personal/resume/resume_vineet_kushwaha.typ"   # Path to YOUR Typst base resume
+  generated_resumes_dir: "/mnt/bridge/dev/personal/resume/generated"
   db_path: "data/platform.db"
   automation: true   # If true, auto-heals & starts timer; if false, kills timer
 

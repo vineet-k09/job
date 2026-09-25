@@ -125,7 +125,11 @@ def run_stage_0_company_discovery(
     p_log = PipelineLogger(logger, run_id, "Stage 0: Company Discovery")
     p_log.info("Starting company discovery...")
 
-    # Check cache first using a key representing this run's job prefs
+    # Fetch existing companies in DB to exclude them from generating duplicate company lists
+    existing_companies = [c.name for c in session.query(Company.name).all() if c.name]
+    existing_company_set = {name.lower() for name in existing_companies}
+    p_log.info(f"Currently tracking {len(existing_companies)} companies in database.")
+
     cache = DBCache(session)
     cache_key = (
         f"company_discovery_{config.job_preferences.geographies[0]}_{config.job_preferences.company_size.min_employees}_20"
@@ -134,22 +138,31 @@ def run_stage_0_company_discovery(
 
     discovered_companies_data = []
 
+    # Check if cached list contains un-tracked companies
     if cached_data:
-        p_log.info("Found cached company discovery list.")
-        discovered_companies_data = cached_data
-    else:
-        # LLM generated + Web search verification
+        unprocessed_in_cache = [c for c in cached_data if c["name"].lower() not in existing_company_set]
+        if len(unprocessed_in_cache) >= 3:
+            p_log.info(f"Found cached company discovery list with {len(unprocessed_in_cache)} new companies.")
+            discovered_companies_data = cached_data
+        else:
+            p_log.info("Cached company list consists mostly of already-tracked companies. Requesting fresh companies from LLM...")
+
+    if not discovered_companies_data:
+        all_exclusions = set(config.exclusions.companies) | set(existing_companies)
+        # Pass up to 50 existing company names to avoid LLM duplication
+        exclusions_list = list(all_exclusions)[:50]
+
         prompt = (
             f"Generate a list of 20 technology companies operating in {config.job_preferences.geographies} "
             f"that typically have a company size between {config.job_preferences.company_size.min_employees} "
             f"and {config.job_preferences.company_size.max_employees} employees. "
-            f"Exclude the following companies: {config.exclusions.companies}. "
+            f"DO NOT include any of the following companies: {exclusions_list}. "
             "Ensure they are active engineering organizations."
         )
         try:
             response = llm.generate_json(prompt, CompanyListResponse)
             discovered_companies_data = [c.model_dump() for c in response.companies]  # type: ignore
-            # Cache it
+            # Cache the newly generated list
             cache.set(
                 cache_key,
                 discovered_companies_data,
@@ -164,12 +177,12 @@ def run_stage_0_company_discovery(
     seen_names = set()
     for c_data in discovered_companies_data:
         name = c_data["name"]
-        if name in seen_names:
+        if name.lower() in seen_names:
             continue
-        seen_names.add(name)
+        seen_names.add(name.lower())
 
         # Avoid duplicate companies
-        existing = session.query(Company).filter(Company.name == name).first()
+        existing = session.query(Company).filter(Company.name.ilike(name)).first()
         if existing:
             db_companies.append(existing)
         else:
@@ -184,7 +197,8 @@ def run_stage_0_company_discovery(
             db_companies.append(new_company)
 
     session.commit()
-    p_log.info(f"Discovered {len(db_companies)} candidate companies.", status="SUCCESS")
+    new_count = sum(1 for c in db_companies if c.name.lower() not in existing_company_set)
+    p_log.info(f"Discovered {len(db_companies)} candidate companies ({new_count} brand new).", status="SUCCESS")
     return db_companies
 
 
@@ -338,13 +352,22 @@ def run_stage_2_filtering(session: Session, config: AppConfig, jobs: list[Job], 
         # Check if Application already exists for this job
         existing_app = session.query(Application).filter(Application.job_id == job.id).first()
         if existing_app:
-            if existing_app.state not in [
+            terminal_states = [
                 "Completed",
                 "Skipped",
-                "Excluded Company",
+                "Duplicate",
                 "Salary Too Low",
+                "Excluded Company",
                 "Ghost Job",
-            ]:
+                "No Professional Email",
+                "Research Failed",
+                "Timeout",
+                "Validation Failed",
+                "Draft Failed",
+                "Manual Skip",
+                "Failed",
+            ]
+            if existing_app.state not in terminal_states:
                 active_applications.append(existing_app)
             continue
 
@@ -957,9 +980,32 @@ def run_stage_7_resume_tailoring(
     p_log = PipelineLogger(logger, run_id, "Stage 7: Resume Tailoring", company.name)
     p_log.info("Tailoring resume...")
 
-    base_resume_path = config.pipeline.base_resume_path
-    if not os.path.exists(base_resume_path):
-        p_log.error(f"Base resume not found at {base_resume_path}. Please place it there to resume.")
+    # Determine base resume variant (AI vs Non-AI/Dev)
+    ai_keywords = {"ai", "llm", "genai", "generative ai", "machine learning", "ml", "data science", "nlp", "prompt", "rag", "vertex", "deep learning"}
+    role_title = (job.title or "").lower()
+    description = (job.description or "").lower()
+    tech_stack_list = [
+        t.lower()
+        for t in (company.research_data.get("tech_stack", []) if company.research_data and isinstance(company.research_data, dict) else [])
+    ]
+
+    is_ai_role = (
+        any(kw in role_title for kw in ai_keywords)
+        or any(kw in tech_stack_list for kw in ai_keywords)
+        or any(kw in description for kw in ai_keywords)
+    )
+
+    ai_path = getattr(config.pipeline, "ai_resume_path", "/mnt/bridge/dev/personal/resume/resume_vineet_kushwaha_ai.typ")
+    fallback_path = config.pipeline.base_resume_path
+
+    if is_ai_role and os.path.exists(ai_path):
+        base_resume_path = ai_path
+        resume_variant = "AI-focused"
+    elif os.path.exists(fallback_path):
+        base_resume_path = fallback_path
+        resume_variant = "Base"
+    else:
+        p_log.error(f"Base resume not found at {fallback_path} or {ai_path}.")
         app.state = "Failed"
         session.add(
             History(
@@ -967,7 +1013,7 @@ def run_stage_7_resume_tailoring(
                 stage=7,
                 state="Failed",
                 run_id=run_id,
-                notes=f"Base resume file '{base_resume_path}' does not exist.",
+                notes="Base resume file does not exist.",
             )
         )
         session.commit()
@@ -977,30 +1023,80 @@ def run_stage_7_resume_tailoring(
         with open(base_resume_path, encoding="utf-8") as f:
             base_resume_text = f.read()
     except Exception as e:
-        p_log.error(f"Error reading base resume: {e}")
+        p_log.error(f"Error reading base resume ({base_resume_path}): {e}")
         app.state = "Failed"
         session.commit()
         return False
 
-    tech_stack = ", ".join(company.research_data.get("tech_stack", [])) if company.research_data else ""
-    prompt = config.prompts.resume_tailoring.format(
-        role_name=job.title,
-        company_name=company.name,
-        tech_stack=tech_stack,
-        base_resume_text=base_resume_text,
-    )
+    should_generate = getattr(config.pipeline, "generate_resume", False)
 
     try:
+        if not should_generate:
+            p_log.info(f"Using pre-built {resume_variant} base resume without LLM generation (generate_resume=False): {base_resume_path}")
+            pdf_filepath = os.path.splitext(base_resume_path)[0] + ".pdf"
+            has_pdf = False
+            try:
+                result = subprocess.run(
+                    ["typst", "compile", base_resume_path, pdf_filepath],
+                    capture_output=True,
+                    text=True,
+                    timeout=10,
+                )
+                if result.returncode == 0:
+                    p_log.info(f"Compiled base resume to PDF: {pdf_filepath}")
+                    has_pdf = True
+                else:
+                    p_log.warning(f"Typst compilation returned non-zero code for base resume: {result.stderr}")
+            except Exception as e:
+                p_log.warning(f"Typst compiler failed to execute for base resume: {e}")
+
+            final_attachment_path = pdf_filepath if (has_pdf and os.path.exists(pdf_filepath)) else base_resume_path
+
+            rv = ResumeVersion(
+                application_id=app.id,
+                parent_resume=base_resume_path,
+                company=company.name,
+                role=job.title,
+                keywords_added=[],
+                reasoning=f"Selected pre-built {resume_variant} base resume ({base_resume_path}) with generate_resume=False.",
+                path=final_attachment_path,
+            )
+            session.add(rv)
+
+            app.tailored_resume_path = final_attachment_path
+            app.current_stage = 8
+            app.state = "Email Generation"
+            session.add(
+                History(
+                    application_id=app.id,
+                    stage=8,
+                    state="Email Generation",
+                    run_id=run_id,
+                    notes=f"Attached pre-built {resume_variant} resume ({final_attachment_path}). Moving to Email Gen.",
+                )
+            )
+            session.commit()
+            p_log.info(f"Resume stage completed using static {resume_variant} resume: {final_attachment_path}", status="SUCCESS")
+            return True
+
+        p_log.info(f"Generating tailored resume via LLM using {resume_variant} base resume...")
+        tech_stack = ", ".join(company.research_data.get("tech_stack", [])) if company.research_data and isinstance(company.research_data, dict) else ""
+        prompt = config.prompts.resume_tailoring.format(
+            role_name=job.title,
+            company_name=company.name,
+            tech_stack=tech_stack,
+            base_resume_text=base_resume_text,
+        )
         try:
             response: ResumeTailorResponse = llm.generate_json(prompt, ResumeTailorResponse)  # type: ignore
             tailored_content = response.tailored_typst_content
             keywords_added = response.keywords_added
             reasoning = response.reasoning
         except Exception as err:
-            p_log.warning(f"LLM resume tailoring failed: {err}. Falling back to base resume.")
+            p_log.warning(f"LLM resume tailoring failed: {err}. Falling back to pre-built {resume_variant} base resume.")
             tailored_content = base_resume_text
             keywords_added = []
-            reasoning = f"Fallback to base resume due to tailoring error: {err}"
+            reasoning = f"Fallback to {resume_variant} base resume due to tailoring error: {err}"
 
         # Ensure base generated directory exists
         os.makedirs(config.pipeline.generated_resumes_dir, exist_ok=True)
