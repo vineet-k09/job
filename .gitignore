@@ -51,6 +51,7 @@ resumes/generated/
 # Personal / local-only files (not committed — use config.example.yaml as template)
 config.yaml
 resumes/resume_*.typ
+resumes/resume_*.pdf
 !resumes/resume_example.typ
 
 # SQLite Databases & Backups
