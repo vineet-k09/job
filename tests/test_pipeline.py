@@ -386,8 +386,8 @@ def test_retry_failed_fk_safety(tmp_path):
 
 
 def test_stage_7_resume_selection_and_toggle(tmp_path):
+    from src.db.models import Application, Company, Job, ResumeVersion, Run
     from src.pipeline.stages import run_stage_7_resume_tailoring
-    from src.db.models import Company, Job, Application, ResumeVersion, Run
 
     engine = create_engine("sqlite:///:memory:")
     Base.metadata.create_all(engine)

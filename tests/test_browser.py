@@ -6,6 +6,7 @@ from src.providers.browser import BrowserProvider
 def test_search_google_redirect_cleaning():
     """Verify that search_google correctly parses and cleans different forms of DuckDuckGo redirect URLs."""
     provider = BrowserProvider()
+    provider.disabled_domains = set()
 
     # Mock HTML containing different link formats
     mock_html = """
